@@ -1,0 +1,55 @@
+{
+  "name": "envdrift",
+  "version": "1.0.0",
+  "description": "Sync .env files without leaking secrets. Detect drift and smart-scrub sensitive values.",
+  "keywords": [
+    "env",
+    "dotenv",
+    "environment",
+    "sync",
+    "secrets",
+    "cli",
+    "drift",
+    "security"
+  ],
+  "author": "sol-21",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sol-21/envdrift.git"
+  },
+  "homepage": "https://github.com/sol-21/envdrift#readme",
+  "bugs": {
+    "url": "https://github.com/sol-21/envdrift/issues"
+  },
+  "type": "module",
+  "bin": {
+    "envdrift": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "fs-extra": "^11.2.0",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
