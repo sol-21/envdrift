@@ -10,7 +10,10 @@
     "secrets",
     "cli",
     "drift",
-    "security"
+    "security",
+    "scrub",
+    "ci",
+    "github-actions"
   ],
   "author": "sol-21",
   "license": "MIT",
@@ -26,30 +29,42 @@
   "bin": {
     "envdrift": "./dist/index.js"
   },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/engine.js",
+  "types": "./dist/engine.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/engine.d.ts",
+      "import": "./dist/engine.js"
+    },
+    "./cli": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "files": [
     "dist",
     "README.md"
   ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "prepublishOnly": "npm run build",
-    "test": "echo \"No tests yet\" && exit 0"
+    "prepublishOnly": "npm run build && npm run test",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "commander": "^12.1.0",
-    "dotenv": "^16.4.5",
     "fs-extra": "^11.2.0",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^22.10.0",
-    "typescript": "^5.7.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.9"
   }
 }

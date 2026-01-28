@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Terminal, Shield, Zap, Copy, Check, Github, Package, BookOpen, ChevronRight, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Terminal, Shield, Zap, Copy, Check, Github, Package, BookOpen, ChevronRight, AlertTriangle, CheckCircle2, Settings, GitBranch, Workflow } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 
@@ -13,13 +13,17 @@ const EXAMPLES = {
 
 ✗ DRIFT DETECTED
 
-⚠ Missing in .env.example (3):
+⚠ Missing in .env.example (5):
   - DATABASE_URL
   - STRIPE_KEY
   - GITHUB_TOKEN
+  - OPENAI_API_KEY
+  - REDIS_URL
 
 ────────────────────────────────────────
-Run envdrift sync to fix drift`,
+Run envdrift sync to fix drift
+    --strict to scrub ALL values
+    --dry-run to preview changes`,
 
   syncDryRun: `╔═══════════════════════════════════════╗
 ║  🛡️  EnvDrift  v1.0.0               ║
@@ -35,16 +39,16 @@ Run envdrift sync to fix drift`,
 ┌──────────────────────┬───────────────────────────────────┬─────────────────────────┐
 │ KEY                  │ SCRUBBED VALUE                    │ REASON                  │
 ├──────────────────────┼───────────────────────────────────┼─────────────────────────┤
-│ DATABASE_URL         │ YOUR_DATABASE_URL_HERE            │⚠Detected PostgreSQL    │
-│ STRIPE_KEY           │ YOUR_STRIPE_KEY_HERE              │⚠Detected Stripe Secret │
-│ GITHUB_TOKEN         │ YOUR_GITHUB_TOKEN_HERE            │⚠Detected GitHub PAT    │
-│ MY_INNOCENT_VAR      │ YOUR_MY_INNOCENT_VAR_HERE         │⚠Detected Stripe Secret │
-│ PORT                 │ YOUR_PORT_HERE                    │⚠Sensitive key name     │
-│ NODE_ENV             │ production                        │✓Non-sensitive key      │
+│ + DATABASE_URL       │ YOUR_DATABASE_URL_HERE            │⚠Detected PostgreSQL    │
+│ + STRIPE_KEY         │ YOUR_STRIPE_KEY_HERE              │⚠Detected Stripe Secret │
+│ + GITHUB_TOKEN       │ YOUR_GITHUB_TOKEN_HERE            │⚠Detected GitHub PAT    │
+│ + OPENAI_API_KEY     │ YOUR_OPENAI_API_KEY_HERE          │⚠Sensitive key name     │
+│ + NODE_ENV           │ production                        │✓Non-sensitive key      │
 └──────────────────────┴───────────────────────────────────┴─────────────────────────┘
 
++ 5 new key(s) would be added
 ────────────────────────────────────────
-⚠ 5 value(s) would be scrubbed, 1 kept as-is
+⚠ 4 value(s) would be scrubbed, 1 kept as-is
 
 ℹ Run without --dry-run to apply changes`,
 
@@ -59,16 +63,15 @@ Run envdrift sync to fix drift`,
 
 ✓ .env.example updated!
 
-  Added 6 new key(s):
+  Added 5 new key(s):
     + DATABASE_URL
     + STRIPE_KEY
     + GITHUB_TOKEN
-    + MY_INNOCENT_VAR
-    + PORT
+    + OPENAI_API_KEY
     + NODE_ENV
 
 ────────────────────────────────────────
-✓ 6 sensitive value(s) scrubbed
+✓ 5 sensitive value(s) scrubbed
   Output: /your/project/.env.example`,
 
   sync: `╔═══════════════════════════════════════╗
@@ -81,27 +84,72 @@ Run envdrift sync to fix drift`,
 
 ✓ .env.example updated!
 
-  Added 6 new key(s):
+  Added 5 new key(s):
     + DATABASE_URL
     + STRIPE_KEY
     + GITHUB_TOKEN
-    + MY_INNOCENT_VAR
-    + PORT
+    + OPENAI_API_KEY
     + NODE_ENV
 
 ────────────────────────────────────────
 ✓ 4 sensitive value(s) scrubbed
   Output: /your/project/.env.example`,
 
+  init: `╔═══════════════════════════════════════╗
+║  🛡️  EnvDrift  v1.0.0               ║
+║  Sync .env files without leaking     ║
+║  secrets.                            ║
+╚═══════════════════════════════════════╝
+
+✓ Created .envdriftrc.json
+✓ Created pre-commit hook
+
+────────────────────────────────────────
+Next steps:
+  1. Edit .envdriftrc.json to customize
+  2. Run envdrift check to check for drift
+  3. Run envdrift sync to sync files`,
+
+  ciCheck: `✓ No drift detected`,
+
   envExample: `# This file was synced and scrubbed by EnvDrift
 # https://github.com/sol-21/envdrift
 
+# Database Configuration
 DATABASE_URL=YOUR_DATABASE_URL_HERE
+
+# API Keys
 STRIPE_KEY=YOUR_STRIPE_KEY_HERE
 GITHUB_TOKEN=YOUR_GITHUB_TOKEN_HERE
-MY_INNOCENT_VAR=YOUR_MY_INNOCENT_VAR_HERE
-PORT=YOUR_PORT_HERE
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY_HERE
+
+# App Settings
 NODE_ENV=production`,
+
+  config: `{
+  "input": ".env",
+  "output": ".env.example",
+  "strict": false,
+  "ignore": ["NODE_ENV", "DEBUG"],
+  "alwaysScrub": ["INTERNAL_SECRET"],
+  "preserveComments": true,
+  "merge": false,
+  "sort": false
+}`,
+
+  githubAction: `name: Check Env Drift
+
+on: [push, pull_request]
+
+jobs:
+  check-env:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npx envdrift check --ci`,
 };
 
 // Reusable Copy Button Component
@@ -509,18 +557,28 @@ const Index = () => {
             />
             <FeatureCard
               icon={<AlertTriangle className="w-6 h-6" />}
-              title="Provider Detection"
-              description="Recognizes secrets from AWS, Stripe, GitHub, PostgreSQL, MongoDB, and more—even if the key name is misleading."
+              title="30+ Provider Detection"
+              description="Recognizes secrets from AWS, Stripe, GitHub, OpenAI, PostgreSQL, MongoDB, Redis, and 30+ more providers."
             />
             <FeatureCard
               icon={<Terminal className="w-6 h-6" />}
-              title="Strict Mode"
-              description="Use --strict to scrub ALL values regardless of key name. Maximum security for the most paranoid developers."
+              title="Strict & Dry Run Modes"
+              description="Use --strict to scrub ALL values, or --dry-run to preview changes before applying them."
             />
             <FeatureCard
-              icon={<BookOpen className="w-6 h-6" />}
-              title="Dry Run Preview"
-              description="Use --dry-run to see exactly what would be written before making any changes. Full transparency, zero surprises."
+              icon={<Settings className="w-6 h-6" />}
+              title="Config File Support"
+              description="Project-level .envdriftrc.json for team consistency. Customize ignore lists, placeholders, and more."
+            />
+            <FeatureCard
+              icon={<GitBranch className="w-6 h-6" />}
+              title="Merge Mode"
+              description="Use --merge to add new keys without overwriting existing entries. Perfect for team workflows."
+            />
+            <FeatureCard
+              icon={<Workflow className="w-6 h-6" />}
+              title="CI/CD Ready"
+              description="Use --ci for minimal output and proper exit codes. Includes GitHub Actions workflow and pre-commit hooks."
             />
           </div>
         </div>
@@ -625,6 +683,125 @@ const Index = () => {
         </div>
       </section>
 
+      {/* Config File Section */}
+      <section className="px-6 py-20">
+        <div className="max-w-4xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            className="text-center mb-12"
+          >
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-500 text-sm font-medium mb-4">
+              <Settings className="w-4 h-4" />
+              Project Configuration
+            </div>
+            <h2 className="font-display text-4xl font-bold mb-4">Config File</h2>
+            <p className="text-muted-foreground text-lg max-w-xl mx-auto">
+              Create a <code className="text-primary font-mono bg-primary/10 px-2 py-0.5 rounded">.envdriftrc.json</code> for team consistency.
+            </p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            <TerminalBlock
+              title="Initialize config"
+              command="npx envdrift init --hook"
+              output={EXAMPLES.init}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="rounded-xl border border-[#30363d] bg-[#0d1117] overflow-hidden shadow-2xl"
+            >
+              <div className="flex items-center justify-between px-4 py-3 bg-[#161b22] border-b border-[#30363d]">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded-full bg-[#ff5f56]" />
+                    <div className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
+                    <div className="w-3 h-3 rounded-full bg-[#27c93f]" />
+                  </div>
+                  <span className="ml-2 text-sm font-mono text-gray-400">.envdriftrc.json</span>
+                </div>
+                <CopyButton text={EXAMPLES.config} variant="prominent" />
+              </div>
+              <pre className="p-4 font-mono text-sm text-gray-300 overflow-x-auto">
+                {EXAMPLES.config}
+              </pre>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* CI/CD Section */}
+      <section className="px-6 py-20 bg-muted/30">
+        <div className="max-w-4xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            className="text-center mb-12"
+          >
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-500 text-sm font-medium mb-4">
+              <Workflow className="w-4 h-4" />
+              Automation
+            </div>
+            <h2 className="font-display text-4xl font-bold mb-4">CI/CD Integration</h2>
+            <p className="text-muted-foreground text-lg max-w-xl mx-auto">
+              Block commits and PRs with env drift using <code className="text-primary font-mono bg-primary/10 px-2 py-0.5 rounded">--ci</code> mode.
+            </p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="rounded-xl border border-[#30363d] bg-[#0d1117] overflow-hidden shadow-2xl"
+            >
+              <div className="flex items-center justify-between px-4 py-3 bg-[#161b22] border-b border-[#30363d]">
+                <div className="flex items-center gap-3">
+                  <Github className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm font-mono text-gray-400">.github/workflows/env-check.yml</span>
+                </div>
+                <CopyButton text={EXAMPLES.githubAction} variant="prominent" />
+              </div>
+              <pre className="p-4 font-mono text-xs text-gray-300 overflow-x-auto">
+                {EXAMPLES.githubAction}
+              </pre>
+            </motion.div>
+            <div className="space-y-6">
+              <TerminalBlock
+                title="CI mode (minimal output)"
+                command="npx envdrift check --ci"
+                output={EXAMPLES.ciCheck}
+              />
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                className="rounded-xl border border-border bg-card p-6"
+              >
+                <h3 className="font-display font-semibold mb-3 flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-green-500" />
+                  Exit Codes
+                </h3>
+                <ul className="space-y-2 text-sm text-muted-foreground">
+                  <li className="flex items-center gap-2">
+                    <code className="bg-green-500/10 text-green-500 px-2 py-0.5 rounded font-mono">0</code>
+                    <span>No drift detected</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <code className="bg-red-500/10 text-red-500 px-2 py-0.5 rounded font-mono">1</code>
+                    <span>Drift detected or error</span>
+                  </li>
+                </ul>
+              </motion.div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* CLI Reference */}
       <section id="cli-reference" className="px-6 py-20">
         <div className="max-w-4xl mx-auto">
@@ -653,9 +830,15 @@ const Index = () => {
               </thead>
               <tbody>
                 <CLIRow command="envdrift check" description="Detect drift between .env and .env.example" />
+                <CLIRow command="envdrift check --ci" description="CI mode with minimal output and exit codes" />
                 <CLIRow command="envdrift sync" description="Sync and scrub .env.example with smart detection" />
                 <CLIRow command="envdrift sync --dry-run" description="Preview changes without modifying files" />
                 <CLIRow command="envdrift sync --strict" description="Scrub ALL values (paranoid mode)" />
+                <CLIRow command="envdrift sync --merge" description="Add new keys without removing existing" />
+                <CLIRow command="envdrift sync --ignore KEY1 KEY2" description="Skip specific keys from scrubbing" />
+                <CLIRow command="envdrift sync -i .env.local -o .env.local.example" description="Custom input/output files" />
+                <CLIRow command="envdrift init" description="Create .envdriftrc.json config file" />
+                <CLIRow command="envdrift init --hook" description="Setup git pre-commit hook" />
                 <CLIRow command="envdrift --help" description="Show help information" isLast />
               </tbody>
             </table>
