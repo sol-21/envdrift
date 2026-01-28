@@ -1,0 +1,70 @@
+{
+  "name": "envdrift",
+  "version": "1.0.0",
+  "description": "Sync .env files without leaking secrets. Detect drift and smart-scrub sensitive values.",
+  "keywords": [
+    "env",
+    "dotenv",
+    "environment",
+    "sync",
+    "secrets",
+    "cli",
+    "drift",
+    "security",
+    "scrub",
+    "ci",
+    "github-actions"
+  ],
+  "author": "sol-21",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sol-21/envdrift.git"
+  },
+  "homepage": "https://github.com/sol-21/envdrift#readme",
+  "bugs": {
+    "url": "https://github.com/sol-21/envdrift/issues"
+  },
+  "type": "module",
+  "bin": {
+    "envdrift": "./dist/index.js"
+  },
+  "main": "./dist/engine.js",
+  "types": "./dist/engine.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/engine.d.ts",
+      "import": "./dist/engine.js"
+    },
+    "./cli": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build && npm run test",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "fs-extra": "^11.2.0",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.9"
+  }
+}

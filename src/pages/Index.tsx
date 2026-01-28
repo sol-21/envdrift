@@ -1,208 +1,982 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react';
-import { Terminal, GitCompare, Zap } from 'lucide-react';
+import React, { useState } from 'react';
+import { Terminal, Shield, Zap, Copy, Check, Github, Package, BookOpen, ChevronRight, AlertTriangle, CheckCircle2, Settings, GitBranch, Workflow } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import FileInputPanel from '@/components/FileInputPanel';
-import DriftStatus from '@/components/DriftStatus';
-import StatsCards from '@/components/StatsCards';
-import DriftDetails from '@/components/DriftDetails';
-import SyncedOutput from '@/components/SyncedOutput';
-import FlyingKeysAnimation from '@/components/FlyingKeysAnimation';
-import {
-  parseEnvContent,
-  extractKeys,
-  detectDrift,
-  generateSyncedExample,
-} from '@/lib/envUtils';
 
-interface FlyingKey {
-  id: string;
-  key: string;
-  startX: number;
-  startY: number;
-  endX: number;
-  endY: number;
-}
+// Terminal output examples from actual CLI runs
+const EXAMPLES = {
+  check: `╔═══════════════════════════════════════╗
+║  🛡️  EnvDrift  v1.0.0               ║
+║  Sync .env files without leaking     ║
+║  secrets.                            ║
+╚═══════════════════════════════════════╝
 
-const Index = () => {
-  const [envContent, setEnvContent] = useState('');
-  const [exampleContent, setExampleContent] = useState('');
-  const [syncedOutput, setSyncedOutput] = useState('');
-  const [showOutput, setShowOutput] = useState(false);
-  const [flyingKeys, setFlyingKeys] = useState<FlyingKey[]>([]);
-  const [isSyncing, setIsSyncing] = useState(false);
+✗ DRIFT DETECTED
 
-  const envPanelRef = useRef<HTMLDivElement>(null);
-  const examplePanelRef = useRef<HTMLDivElement>(null);
+⚠ Missing in .env.example (5):
+  - DATABASE_URL
+  - STRIPE_KEY
+  - GITHUB_TOKEN
+  - OPENAI_API_KEY
+  - REDIS_URL
 
-  // Parse and analyze
-  const envEntries = useMemo(() => parseEnvContent(envContent), [envContent]);
-  const exampleEntries = useMemo(() => parseEnvContent(exampleContent), [exampleContent]);
+────────────────────────────────────────
+Run envdrift sync to fix drift
+    --strict to scrub ALL values
+    --dry-run to preview changes`,
 
-  const envKeys = useMemo(() => extractKeys(envEntries), [envEntries]);
-  const exampleKeys = useMemo(() => extractKeys(exampleEntries), [exampleEntries]);
+  syncDryRun: `╔═══════════════════════════════════════╗
+║  🛡️  EnvDrift  v1.0.0               ║
+║  Sync .env files without leaking     ║
+║  secrets.                            ║
+╚═══════════════════════════════════════╝
 
-  const driftResult = useMemo(
-    () => detectDrift(envKeys, exampleKeys),
-    [envKeys, exampleKeys]
-  );
+ℹ DRY RUN - No files will be modified
+► Syncing .env.example...
 
-  const hasContent = envContent.length > 0 || exampleContent.length > 0;
-  const canSync = envContent.length > 0 && driftResult.missingInExample.length > 0;
+► DRY RUN - Preview of changes:
 
-  const handleSync = useCallback(() => {
-    if (!canSync || isSyncing) return;
+┌──────────────────────┬───────────────────────────────────┬─────────────────────────┐
+│ KEY                  │ SCRUBBED VALUE                    │ REASON                  │
+├──────────────────────┼───────────────────────────────────┼─────────────────────────┤
+│ + DATABASE_URL       │ YOUR_DATABASE_URL_HERE            │⚠Detected PostgreSQL    │
+│ + STRIPE_KEY         │ YOUR_STRIPE_KEY_HERE              │⚠Detected Stripe Secret │
+│ + GITHUB_TOKEN       │ YOUR_GITHUB_TOKEN_HERE            │⚠Detected GitHub PAT    │
+│ + OPENAI_API_KEY     │ YOUR_OPENAI_API_KEY_HERE          │⚠Sensitive key name     │
+│ + NODE_ENV           │ production                        │✓Non-sensitive key      │
+└──────────────────────┴───────────────────────────────────┴─────────────────────────┘
 
-    setIsSyncing(true);
++ 5 new key(s) would be added
+────────────────────────────────────────
+⚠ 4 value(s) would be scrubbed, 1 kept as-is
 
-    // Calculate positions for flying animation
-    const envRect = envPanelRef.current?.getBoundingClientRect();
-    const exampleRect = examplePanelRef.current?.getBoundingClientRect();
+ℹ Run without --dry-run to apply changes`,
 
-    if (envRect && exampleRect) {
-      const newFlyingKeys: FlyingKey[] = driftResult.missingInExample.map(
-        (key, index) => ({
-          id: `${key}-${Date.now()}-${index}`,
-          key,
-          startX: envRect.left + envRect.width / 2 - 50,
-          startY: envRect.top + 100 + index * 30,
-          endX: exampleRect.left + exampleRect.width / 2 - 50,
-          endY: exampleRect.top + 100,
-        })
-      );
+  syncStrict: `╔═══════════════════════════════════════╗
+║  🛡️  EnvDrift  v1.0.0               ║
+║  Sync .env files without leaking     ║
+║  secrets.                            ║
+╚═══════════════════════════════════════╝
 
-      setFlyingKeys(newFlyingKeys);
-    } else {
-      // Fallback if refs not available
-      completeSync();
-    }
-  }, [canSync, isSyncing, driftResult.missingInExample]);
+⚠ STRICT MODE - All values will be scrubbed
+► Syncing .env.example...
 
-  const completeSync = useCallback(() => {
-    const output = generateSyncedExample(envEntries, exampleEntries);
-    setSyncedOutput(output);
-    setShowOutput(true);
-    setFlyingKeys([]);
-    setIsSyncing(false);
-  }, [envEntries, exampleEntries]);
+✓ .env.example updated!
+
+  Added 5 new key(s):
+    + DATABASE_URL
+    + STRIPE_KEY
+    + GITHUB_TOKEN
+    + OPENAI_API_KEY
+    + NODE_ENV
+
+────────────────────────────────────────
+✓ 5 sensitive value(s) scrubbed
+  Output: /your/project/.env.example`,
+
+  sync: `╔═══════════════════════════════════════╗
+║  🛡️  EnvDrift  v1.0.0               ║
+║  Sync .env files without leaking     ║
+║  secrets.                            ║
+╚═══════════════════════════════════════╝
+
+► Syncing .env.example...
+
+✓ .env.example updated!
+
+  Added 5 new key(s):
+    + DATABASE_URL
+    + STRIPE_KEY
+    + GITHUB_TOKEN
+    + OPENAI_API_KEY
+    + NODE_ENV
+
+────────────────────────────────────────
+✓ 4 sensitive value(s) scrubbed
+  Output: /your/project/.env.example`,
+
+  init: `╔═══════════════════════════════════════╗
+║  🛡️  EnvDrift  v1.0.0               ║
+║  Sync .env files without leaking     ║
+║  secrets.                            ║
+╚═══════════════════════════════════════╝
+
+✓ Created .envdriftrc.json
+✓ Created pre-commit hook
+
+────────────────────────────────────────
+Next steps:
+  1. Edit .envdriftrc.json to customize
+  2. Run envdrift check to check for drift
+  3. Run envdrift sync to sync files`,
+
+  ciCheck: `✓ No drift detected`,
+
+  envExample: `# This file was synced and scrubbed by EnvDrift
+# https://github.com/sol-21/envdrift
+
+# Database Configuration
+DATABASE_URL=YOUR_DATABASE_URL_HERE
+
+# API Keys
+STRIPE_KEY=YOUR_STRIPE_KEY_HERE
+GITHUB_TOKEN=YOUR_GITHUB_TOKEN_HERE
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY_HERE
+
+# App Settings
+NODE_ENV=production`,
+
+  config: `{
+  "input": ".env",
+  "output": ".env.example",
+  "strict": false,
+  "ignore": ["NODE_ENV", "DEBUG"],
+  "alwaysScrub": ["INTERNAL_SECRET"],
+  "preserveComments": true,
+  "merge": false,
+  "sort": false
+}`,
+
+  diff: `╔═══════════════════════════════════════╗
+║  🛡️  EnvDrift  v1.0.0               ║
+║  Sync .env files without leaking     ║
+║  secrets.                            ║
+╚═══════════════════════════════════════╝
+
+Diff: .env ↔ .env.example
+────────────────────────────────────────────────────────────
+
++ API_KEY=secret123
++ AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+~ DATABASE_URL
+  - YOUR_DATABASE_URL_HERE
+  + postgres://user:password@localhost:5432/mydb
+- OLD_UNUSED_KEY=value
+
+────────────────────────────────────────────────────────────
++ 2 added  - 1 removed  ~ 1 modified`,
+
+  scan: `╔═══════════════════════════════════════╗
+║  🛡️  EnvDrift  v1.0.0               ║
+║  Sync .env files without leaking     ║
+║  secrets.                            ║
+╚═══════════════════════════════════════╝
+
+Found 3 .env file(s):
+
+  ✓ .env (12 keys)
+  ✓ .env.local (5 keys)
+  ✓ .env.development (8 keys)
+
+────────────────────────────────────────
+Run envdrift check --all to check all files`,
+
+  jsonOutput: `{
+  "synced": false,
+  "missingInExample": ["NEW_API_KEY", "STRIPE_SECRET"],
+  "missingInEnv": ["OLD_KEY"],
+  "envKeyCount": 10,
+  "exampleKeyCount": 9
+}`,
+
+  githubAction: `name: Check Env Drift
+
+on: [push, pull_request]
+
+jobs:
+  check-env:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npx envdrift check --ci`,
+};
+
+// Reusable Copy Button Component
+const CopyButton: React.FC<{ 
+  text: string; 
+  className?: string;
+  variant?: 'default' | 'minimal' | 'prominent';
+}> = ({ text, className = '', variant = 'default' }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (variant === 'minimal') {
+    return (
+      <button
+        onClick={handleCopy}
+        className={`p-1.5 rounded hover:bg-white/10 transition-colors ${className}`}
+        title="Copy to clipboard"
+      >
+        {copied ? (
+          <Check className="w-4 h-4 text-green-400" />
+        ) : (
+          <Copy className="w-4 h-4 text-gray-400 hover:text-white" />
+        )}
+      </button>
+    );
+  }
+
+  if (variant === 'prominent') {
+    return (
+      <button
+        onClick={handleCopy}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 border border-white/20 transition-all ${className}`}
+      >
+        {copied ? (
+          <>
+            <Check className="w-4 h-4 text-green-400" />
+            <span className="text-sm text-green-400 font-medium">Copied!</span>
+          </>
+        ) : (
+          <>
+            <Copy className="w-4 h-4 text-gray-300" />
+            <span className="text-sm text-gray-300 font-medium">Copy</span>
+          </>
+        )}
+      </button>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-background p-6 md:p-8">
-      {/* Flying Keys Animation Overlay */}
-      <FlyingKeysAnimation keys={flyingKeys} onComplete={completeSync} />
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={handleCopy}
+      className={`h-8 px-3 text-xs bg-white/5 hover:bg-white/10 border border-white/10 ${className}`}
+    >
+      {copied ? (
+        <>
+          <Check className="w-3.5 h-3.5 mr-1.5 text-green-400" />
+          <span className="text-green-400">Copied!</span>
+        </>
+      ) : (
+        <>
+          <Copy className="w-3.5 h-3.5 mr-1.5" />
+          Copy
+        </>
+      )}
+    </Button>
+  );
+};
 
-      <div className="max-w-6xl mx-auto space-y-8">
-        {/* Header */}
-        <motion.header
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center space-y-3"
-        >
-          <div className="flex items-center justify-center gap-3">
-            <Terminal className="w-10 h-10 text-primary" />
-            <h1 className="font-display text-4xl md:text-5xl font-bold text-foreground terminal-text">
+// Code Block with Copy - for inline commands
+const CodeBlock: React.FC<{
+  code: string;
+  language?: string;
+  showLineNumbers?: boolean;
+}> = ({ code, showLineNumbers = false }) => {
+  return (
+    <div className="group relative rounded-lg bg-[#0d1117] border border-[#30363d] overflow-hidden">
+      <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+        <CopyButton text={code} variant="prominent" />
+      </div>
+      <pre className={`p-4 overflow-x-auto font-mono text-sm text-gray-300 ${showLineNumbers ? 'pl-12' : ''}`}>
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+};
+
+// Terminal Block Component for command + output
+const TerminalBlock: React.FC<{ 
+  command: string; 
+  output: string; 
+  title?: string;
+  step?: number;
+}> = ({ command, output, title, step }) => {
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      className="rounded-xl border border-[#30363d] bg-[#0d1117] overflow-hidden shadow-2xl"
+    >
+      {/* Terminal Header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-[#161b22] border-b border-[#30363d]">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-[#ff5f56]" />
+            <div className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
+            <div className="w-3 h-3 rounded-full bg-[#27c93f]" />
+          </div>
+          {title && (
+            <div className="flex items-center gap-2 ml-2">
+              {step && (
+                <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">
+                  {step}
+                </span>
+              )}
+              <span className="text-sm font-medium text-gray-400">{title}</span>
+            </div>
+          )}
+        </div>
+        <CopyButton text={command} variant="prominent" />
+      </div>
+      
+      {/* Command Line */}
+      <div className="px-4 py-3 bg-[#0d1117] border-b border-[#30363d]/50">
+        <div className="flex items-center gap-2">
+          <span className="text-green-400 font-mono">$</span>
+          <code className="text-green-400 font-mono text-sm font-medium">{command}</code>
+        </div>
+      </div>
+      
+      {/* Output */}
+      <div className="p-4 bg-[#0d1117]">
+        <pre className="font-mono text-xs text-gray-300 whitespace-pre overflow-x-auto leading-relaxed">
+          {output}
+        </pre>
+      </div>
+    </motion.div>
+  );
+};
+
+// Command Card for Installation section
+const CommandCard: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  command: string;
+}> = ({ icon, title, description, command }) => {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      className="rounded-xl border border-border bg-card p-6 hover:border-primary/50 transition-colors"
+    >
+      <div className="flex items-center gap-3 mb-3">
+        <div className="p-2 rounded-lg bg-primary/10 text-primary">
+          {icon}
+        </div>
+        <div>
+          <h3 className="font-display font-semibold text-foreground">{title}</h3>
+          <p className="text-xs text-muted-foreground">{description}</p>
+        </div>
+      </div>
+      <div className="group relative rounded-lg bg-[#0d1117] border border-[#30363d] overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3">
+          <code className="text-green-400 font-mono text-sm">{command}</code>
+          <CopyButton text={command} variant="minimal" className="opacity-50 group-hover:opacity-100" />
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
+// Feature Card Component
+const FeatureCard: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}> = ({ icon, title, description }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    whileInView={{ opacity: 1, y: 0 }}
+    viewport={{ once: true }}
+    className="group p-6 rounded-xl border border-border bg-card/50 hover:bg-card hover:border-primary/30 transition-all duration-300"
+  >
+    <div className="flex items-start gap-4">
+      <div className="p-3 rounded-lg bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+        {icon}
+      </div>
+      <div>
+        <h3 className="font-display font-semibold text-foreground mb-2">{title}</h3>
+        <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
+      </div>
+    </div>
+  </motion.div>
+);
+
+// CLI Reference Row with Copy
+const CLIRow: React.FC<{
+  command: string;
+  description: string;
+  isLast?: boolean;
+}> = ({ command, description, isLast = false }) => {
+  return (
+    <tr className={`group hover:bg-muted/50 transition-colors ${!isLast ? 'border-b border-border' : ''}`}>
+      <td className="p-4">
+        <div className="flex items-center gap-2">
+          <code className="text-primary font-mono text-sm bg-primary/10 px-2 py-1 rounded">{command}</code>
+          <CopyButton text={command} variant="minimal" className="opacity-0 group-hover:opacity-100" />
+        </div>
+      </td>
+      <td className="p-4 text-muted-foreground text-sm">{description}</td>
+    </tr>
+  );
+};
+
+const Index = () => {
+  const [copiedHero, setCopiedHero] = useState(false);
+
+  const handleCopyHero = async () => {
+    await navigator.clipboard.writeText('npx envdrift sync');
+    setCopiedHero(true);
+    setTimeout(() => setCopiedHero(false), 2000);
+  };
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Navigation */}
+      <nav className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Terminal className="w-6 h-6 text-primary" />
+            <span className="font-display font-bold text-lg">EnvDrift</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors hidden sm:block">Features</a>
+            <a href="#installation" className="text-sm text-muted-foreground hover:text-foreground transition-colors hidden sm:block">Install</a>
+            <a href="#cli-reference" className="text-sm text-muted-foreground hover:text-foreground transition-colors hidden sm:block">CLI</a>
+            <a
+              href="https://github.com/sol-21/envdrift"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-card border border-border hover:bg-muted transition-colors"
+            >
+              <Github className="w-4 h-4" />
+              <span className="text-sm font-medium hidden sm:block">GitHub</span>
+            </a>
+          </div>
+        </div>
+      </nav>
+
+      {/* Hero Section */}
+      <section className="relative px-6 py-24 md:py-32 overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent opacity-50" />
+        
+        <div className="max-w-4xl mx-auto text-center relative z-10">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm font-medium mb-8"
+          >
+            <Shield className="w-4 h-4" />
+            Protect your secrets
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center justify-center gap-4 mb-6"
+          >
+            <Terminal className="w-14 h-14 text-primary" />
+            <h1 className="font-display text-5xl md:text-7xl font-bold text-foreground tracking-tight">
               EnvDrift
             </h1>
-          </div>
-          <p className="text-muted-foreground text-sm md:text-base max-w-xl mx-auto">
-            Keep your <code className="text-primary">.env</code> and{' '}
-            <code className="text-primary">.env.example</code> files in perfect sync.
-            Never leak secrets, never miss a variable.
-          </p>
-        </motion.header>
+          </motion.div>
+          
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.1 }}
+            className="text-xl md:text-2xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed"
+          >
+            Sync your <code className="text-primary font-mono bg-primary/10 px-2 py-0.5 rounded">.env</code> files safely.
+            <br className="hidden sm:block" />
+            <span className="text-foreground font-medium">Never leak secrets again.</span>
+          </motion.p>
 
-        {/* File Input Panels */}
-        <motion.section
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="grid md:grid-cols-2 gap-4 min-h-[300px]"
-        >
-          <FileInputPanel
-            title="Local Secrets"
-            filename=".env"
-            content={envContent}
-            onContentChange={setEnvContent}
-            panelRef={envPanelRef}
-          />
-          <FileInputPanel
-            title="Template File"
-            filename=".env.example"
-            content={exampleContent}
-            onContentChange={setExampleContent}
-            panelRef={examplePanelRef}
-          />
-        </motion.section>
-
-        {/* Drift Status */}
-        <motion.section
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="flex flex-col items-center gap-4"
-        >
-          <DriftStatus isSynced={driftResult.isSynced} hasContent={hasContent} />
-
-          {canSync && (
-            <Button
-              size="lg"
-              onClick={handleSync}
-              disabled={isSyncing}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground font-display font-bold glow-primary"
-            >
-              <GitCompare className="w-5 h-5 mr-2" />
-              {isSyncing ? 'Syncing...' : 'Sync Files'}
-              <Zap className="w-4 h-4 ml-2" />
-            </Button>
-          )}
-        </motion.section>
-
-        {/* Stats Cards */}
-        {hasContent && (
-          <motion.section
+          {/* Hero Command */}
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="max-w-md mx-auto mb-8"
+          >
+            <div className="group relative rounded-xl bg-[#0d1117] border-2 border-[#30363d] hover:border-primary/50 overflow-hidden transition-colors shadow-2xl">
+              <div className="flex items-center justify-between px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <span className="text-green-400 font-mono text-lg">$</span>
+                  <code className="text-green-400 font-mono text-lg font-medium">npx envdrift sync</code>
+                </div>
+                <button
+                  onClick={handleCopyHero}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 transition-all"
+                >
+                  {copiedHero ? (
+                    <>
+                      <Check className="w-5 h-5 text-green-400" />
+                      <span className="text-sm text-green-400 font-medium">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-5 h-5 text-gray-300" />
+                      <span className="text-sm text-gray-300 font-medium">Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             transition={{ delay: 0.3 }}
+            className="flex flex-col sm:flex-row items-center justify-center gap-4"
           >
-            <StatsCards
-              envKeyCount={envKeys.length}
-              exampleKeyCount={exampleKeys.length}
-              missingInExampleCount={driftResult.missingInExample.length}
-              missingInLocalCount={driftResult.missingInLocal.length}
-            />
-          </motion.section>
-        )}
+            <Button size="lg" asChild className="bg-primary hover:bg-primary/90">
+              <a href="#quick-start">
+                Get Started
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </a>
+            </Button>
+            <Button variant="outline" size="lg" asChild>
+              <a href="https://github.com/sol-21/envdrift" target="_blank" rel="noopener noreferrer">
+                <Github className="w-4 h-4 mr-2" />
+                View on GitHub
+              </a>
+            </Button>
+          </motion.div>
+        </div>
+      </section>
 
-        {/* Drift Details */}
-        {hasContent && (
-          <motion.section
+      {/* Quick Start */}
+      <section id="quick-start" className="px-6 py-20 bg-muted/30">
+        <div className="max-w-4xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            className="text-center mb-16"
+          >
+            <h2 className="font-display text-4xl font-bold mb-4">Quick Start</h2>
+            <p className="text-muted-foreground text-lg">Get up and running in seconds</p>
+          </motion.div>
+
+          <div className="grid gap-8">
+            <TerminalBlock
+              step={1}
+              title="Check for drift"
+              command="npx envdrift check"
+              output={EXAMPLES.check}
+            />
+            <TerminalBlock
+              step={2}
+              title="Preview changes (dry run)"
+              command="npx envdrift sync --dry-run"
+              output={EXAMPLES.syncDryRun}
+            />
+            <TerminalBlock
+              step={3}
+              title="Sync and scrub"
+              command="npx envdrift sync"
+              output={EXAMPLES.sync}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section id="features" className="px-6 py-20">
+        <div className="max-w-4xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            className="text-center mb-16"
+          >
+            <h2 className="font-display text-4xl font-bold mb-4">Features</h2>
+            <p className="text-muted-foreground text-lg">Built for security-conscious developers</p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <FeatureCard
+              icon={<Shield className="w-6 h-6" />}
+              title="Smart Scrubbing"
+              description="Automatically detects and scrubs sensitive values like passwords, API keys, and tokens based on key names and value patterns."
+            />
+            <FeatureCard
+              icon={<AlertTriangle className="w-6 h-6" />}
+              title="30+ Provider Detection"
+              description="Recognizes secrets from AWS, Stripe, GitHub, OpenAI, PostgreSQL, MongoDB, Redis, and 30+ more providers."
+            />
+            <FeatureCard
+              icon={<Terminal className="w-6 h-6" />}
+              title="Strict & Dry Run Modes"
+              description="Use --strict to scrub ALL values, or --dry-run to preview changes before applying them."
+            />
+            <FeatureCard
+              icon={<Settings className="w-6 h-6" />}
+              title="Config File Support"
+              description="Project-level .envdriftrc.json for team consistency. Customize ignore lists, placeholders, and more."
+            />
+            <FeatureCard
+              icon={<GitBranch className="w-6 h-6" />}
+              title="Diff & Watch Mode"
+              description="Visual diff between files with envdrift diff. Auto-sync on changes with envdrift sync --watch."
+            />
+            <FeatureCard
+              icon={<Workflow className="w-6 h-6" />}
+              title="CI/CD Ready"
+              description="Use --json for machine-readable output, --ci for minimal mode, --quiet to suppress output. Proper exit codes."
+            />
+            <FeatureCard
+              icon={<Package className="w-6 h-6" />}
+              title="Multi-file Support"
+              description="Scan .env, .env.local, .env.development, etc. with envdrift scan. Check all files at once with --all."
+            />
+            <FeatureCard
+              icon={<BookOpen className="w-6 h-6" />}
+              title="Interactive Mode"
+              description="Approve each change individually with envdrift sync --interactive. Perfect for reviewing sensitive updates."
+            />
+            <FeatureCard
+              icon={<CheckCircle2 className="w-6 h-6" />}
+              title="Merge Mode"
+              description="Use --merge to add new keys without removing existing entries. Perfect for team workflows."
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Strict Mode Example */}
+      <section className="px-6 py-20 bg-muted/30">
+        <div className="max-w-4xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            className="text-center mb-12"
+          >
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-sm font-medium mb-4">
+              <AlertTriangle className="w-4 h-4" />
+              Paranoid Mode
+            </div>
+            <h2 className="font-display text-4xl font-bold mb-4">Strict Mode</h2>
+            <p className="text-muted-foreground text-lg max-w-xl mx-auto">
+              For maximum security, use <code className="text-primary font-mono bg-primary/10 px-2 py-0.5 rounded">--strict</code> to scrub every single value.
+            </p>
+          </motion.div>
+
+          <TerminalBlock
+            command="npx envdrift sync --strict"
+            output={EXAMPLES.syncStrict}
+          />
+        </div>
+      </section>
+
+      {/* Output Example */}
+      <section className="px-6 py-20">
+        <div className="max-w-4xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            className="text-center mb-12"
+          >
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-500 text-sm font-medium mb-4">
+              <CheckCircle2 className="w-4 h-4" />
+              Safe to Commit
+            </div>
+            <h2 className="font-display text-4xl font-bold mb-4">Generated Output</h2>
+            <p className="text-muted-foreground text-lg">
+              Your <code className="text-primary font-mono bg-primary/10 px-2 py-0.5 rounded">.env.example</code> will be clean and safe to commit.
+            </p>
+          </motion.div>
+
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="rounded-xl border border-[#30363d] bg-[#0d1117] overflow-hidden shadow-2xl"
           >
-            <DriftDetails
-              missingInExample={driftResult.missingInExample}
-              missingInLocal={driftResult.missingInLocal}
+            <div className="flex items-center justify-between px-4 py-3 bg-[#161b22] border-b border-[#30363d]">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-[#ff5f56]" />
+                  <div className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
+                  <div className="w-3 h-3 rounded-full bg-[#27c93f]" />
+                </div>
+                <span className="ml-2 text-sm font-mono text-gray-400">.env.example</span>
+              </div>
+              <CopyButton text={EXAMPLES.envExample} variant="prominent" />
+            </div>
+            <pre className="p-6 font-mono text-sm text-gray-300 overflow-x-auto leading-relaxed">
+              {EXAMPLES.envExample}
+            </pre>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Installation */}
+      <section id="installation" className="px-6 py-20 bg-muted/30">
+        <div className="max-w-4xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            className="text-center mb-12"
+          >
+            <h2 className="font-display text-4xl font-bold mb-4">Installation</h2>
+            <p className="text-muted-foreground text-lg">Use directly with npx or install globally</p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            <CommandCard
+              icon={<Zap className="w-5 h-5" />}
+              title="Quick Use"
+              description="Run directly without installation"
+              command="npx envdrift sync"
             />
-          </motion.section>
-        )}
+            <CommandCard
+              icon={<Package className="w-5 h-5" />}
+              title="Global Install"
+              description="Install once, use anywhere"
+              command="npm install -g envdrift"
+            />
+          </div>
+        </div>
+      </section>
 
-        {/* Synced Output */}
-        <motion.section
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.5 }}
-        >
-          <SyncedOutput content={syncedOutput} isVisible={showOutput} />
-        </motion.section>
+      {/* Config File Section */}
+      <section className="px-6 py-20">
+        <div className="max-w-4xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            className="text-center mb-12"
+          >
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-500 text-sm font-medium mb-4">
+              <Settings className="w-4 h-4" />
+              Project Configuration
+            </div>
+            <h2 className="font-display text-4xl font-bold mb-4">Config File</h2>
+            <p className="text-muted-foreground text-lg max-w-xl mx-auto">
+              Create a <code className="text-primary font-mono bg-primary/10 px-2 py-0.5 rounded">.envdriftrc.json</code> for team consistency.
+            </p>
+          </motion.div>
 
-        {/* Footer */}
-        <footer className="text-center text-xs text-muted-foreground pt-8 border-t border-border">
-          <p>
-            Built with <span className="text-primary">♥</span> for developers who care about security
-          </p>
-        </footer>
-      </div>
+          <div className="grid md:grid-cols-2 gap-6">
+            <TerminalBlock
+              title="Initialize config"
+              command="npx envdrift init --hook"
+              output={EXAMPLES.init}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="rounded-xl border border-[#30363d] bg-[#0d1117] overflow-hidden shadow-2xl"
+            >
+              <div className="flex items-center justify-between px-4 py-3 bg-[#161b22] border-b border-[#30363d]">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded-full bg-[#ff5f56]" />
+                    <div className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
+                    <div className="w-3 h-3 rounded-full bg-[#27c93f]" />
+                  </div>
+                  <span className="ml-2 text-sm font-mono text-gray-400">.envdriftrc.json</span>
+                </div>
+                <CopyButton text={EXAMPLES.config} variant="prominent" />
+              </div>
+              <pre className="p-4 font-mono text-sm text-gray-300 overflow-x-auto">
+                {EXAMPLES.config}
+              </pre>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* CI/CD Section */}
+      <section className="px-6 py-20 bg-muted/30">
+        <div className="max-w-4xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            className="text-center mb-12"
+          >
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-500 text-sm font-medium mb-4">
+              <Workflow className="w-4 h-4" />
+              Automation
+            </div>
+            <h2 className="font-display text-4xl font-bold mb-4">CI/CD Integration</h2>
+            <p className="text-muted-foreground text-lg max-w-xl mx-auto">
+              Block commits and PRs with env drift using <code className="text-primary font-mono bg-primary/10 px-2 py-0.5 rounded">--ci</code> mode.
+            </p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="rounded-xl border border-[#30363d] bg-[#0d1117] overflow-hidden shadow-2xl"
+            >
+              <div className="flex items-center justify-between px-4 py-3 bg-[#161b22] border-b border-[#30363d]">
+                <div className="flex items-center gap-3">
+                  <Github className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm font-mono text-gray-400">.github/workflows/env-check.yml</span>
+                </div>
+                <CopyButton text={EXAMPLES.githubAction} variant="prominent" />
+              </div>
+              <pre className="p-4 font-mono text-xs text-gray-300 overflow-x-auto">
+                {EXAMPLES.githubAction}
+              </pre>
+            </motion.div>
+            <div className="space-y-6">
+              <TerminalBlock
+                title="CI mode (minimal output)"
+                command="npx envdrift check --ci"
+                output={EXAMPLES.ciCheck}
+              />
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                className="rounded-xl border border-border bg-card p-6"
+              >
+                <h3 className="font-display font-semibold mb-3 flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-green-500" />
+                  Exit Codes
+                </h3>
+                <ul className="space-y-2 text-sm text-muted-foreground">
+                  <li className="flex items-center gap-2">
+                    <code className="bg-green-500/10 text-green-500 px-2 py-0.5 rounded font-mono">0</code>
+                    <span>No drift detected</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <code className="bg-red-500/10 text-red-500 px-2 py-0.5 rounded font-mono">1</code>
+                    <span>Drift detected or error</span>
+                  </li>
+                </ul>
+              </motion.div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* CLI Reference */}
+      <section id="cli-reference" className="px-6 py-20">
+        <div className="max-w-4xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            className="text-center mb-12"
+          >
+            <h2 className="font-display text-4xl font-bold mb-4">CLI Reference</h2>
+            <p className="text-muted-foreground text-lg">All available commands at a glance</p>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="rounded-xl border border-border bg-card overflow-hidden"
+          >
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="text-left p-4 font-display font-semibold">Command</th>
+                  <th className="text-left p-4 font-display font-semibold">Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <CLIRow command="envdrift check" description="Detect drift between .env and .env.example" />
+                <CLIRow command="envdrift check --ci" description="CI mode with minimal output and exit codes" />
+                <CLIRow command="envdrift check --json" description="Output results as JSON for tooling" />
+                <CLIRow command="envdrift check --all" description="Check all .env files (.env, .env.local, etc.)" />
+                <CLIRow command="envdrift sync" description="Sync and scrub .env.example with smart detection" />
+                <CLIRow command="envdrift sync --dry-run" description="Preview changes without modifying files" />
+                <CLIRow command="envdrift sync --strict" description="Scrub ALL values (paranoid mode)" />
+                <CLIRow command="envdrift sync --interactive" description="Approve each change individually" />
+                <CLIRow command="envdrift sync --watch" description="Auto-sync on file changes" />
+                <CLIRow command="envdrift sync --merge" description="Add new keys without removing existing" />
+                <CLIRow command="envdrift sync --json" description="Output results as JSON" />
+                <CLIRow command="envdrift diff" description="Show visual diff between .env and .env.example" />
+                <CLIRow command="envdrift diff --changes-only" description="Only show differences, hide unchanged" />
+                <CLIRow command="envdrift scan" description="Scan project for all .env files" />
+                <CLIRow command="envdrift init" description="Create .envdriftrc.json config file" />
+                <CLIRow command="envdrift init --hook" description="Setup git pre-commit hook" isLast />
+              </tbody>
+            </table>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="px-6 py-20 bg-gradient-to-b from-muted/30 to-background">
+        <div className="max-w-2xl mx-auto text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+          >
+            <h2 className="font-display text-3xl font-bold mb-4">Ready to secure your env files?</h2>
+            <p className="text-muted-foreground text-lg mb-8">
+              Start using EnvDrift today. It's open source and free forever.
+            </p>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <Button size="lg" asChild className="bg-primary hover:bg-primary/90">
+                <a href="#quick-start">
+                  Get Started
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </a>
+              </Button>
+              <Button variant="outline" size="lg" asChild>
+                <a href="https://github.com/sol-21/envdrift" target="_blank" rel="noopener noreferrer">
+                  <Github className="w-4 h-4 mr-2" />
+                  Star on GitHub
+                </a>
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="px-6 py-12 border-t border-border">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="flex items-center gap-2">
+              <Terminal className="w-5 h-5 text-primary" />
+              <span className="font-display font-bold text-lg">EnvDrift</span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Built with <span className="text-red-500">♥</span> for developers who care about security
+            </p>
+            <div className="flex items-center gap-4">
+              <a
+                href="https://github.com/sol-21/envdrift"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                title="GitHub"
+              >
+                <Github className="w-5 h-5" />
+              </a>
+              <a
+                href="https://www.npmjs.com/package/envdrift"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                title="npm"
+              >
+                <Package className="w-5 h-5" />
+              </a>
+            </div>
+          </div>
+          <div className="mt-8 pt-8 border-t border-border text-center">
+            <p className="text-xs text-muted-foreground">
+              MIT License © {new Date().getFullYear()} EnvDrift. All rights reserved.
+            </p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };
