@@ -15,8 +15,6 @@ import {
   detectDrift,
   generateSyncedExample,
   configToSyncOptions,
-  type DriftResult,
-  type SyncedEntry,
   type SyncOptions,
 } from './engine.js';
 import {
@@ -25,17 +23,19 @@ import {
   generateDefaultConfig,
   type EnvDriftConfig,
 } from './config.js';
+import { createOutputHandler, banner, type OutputFormat } from './output.js';
+import { computeDiff, computeChangesOnly } from './diff.js';
+import { startWatch } from './watch.js';
+import { interactiveSync } from './interactive.js';
 
 const VERSION = '1.0.0';
 
-// ASCII art banner
-const banner = `
-${pc.green('╔═══════════════════════════════════════╗')}
-${pc.green('║')}  ${pc.bold(pc.green('🛡️  EnvDrift'))}  ${pc.dim('v' + VERSION)}               ${pc.green('║')}
-${pc.green('║')}  ${pc.dim('Sync .env files without leaking')}     ${pc.green('║')}
-${pc.green('║')}  ${pc.dim('secrets.')}                            ${pc.green('║')}
-${pc.green('╚═══════════════════════════════════════╝')}
-`;
+/**
+ * Normalize path for cross-platform compatibility
+ */
+const normalizePath = (p: string): string => {
+  return p.replace(/\\/g, '/');
+};
 
 /**
  * Get file paths based on config and current working directory
@@ -46,6 +46,45 @@ const getFilePaths = (config: EnvDriftConfig) => {
     envPath: path.resolve(cwd, config.input || '.env'),
     examplePath: path.resolve(cwd, config.output || '.env.example'),
   };
+};
+
+/**
+ * Resolve multiple input files (.env, .env.local, etc.)
+ */
+const resolveEnvFiles = async (config: EnvDriftConfig): Promise<string[]> => {
+  const cwd = process.cwd();
+  const files: string[] = [];
+
+  // Primary .env file
+  const primaryPath = path.resolve(cwd, config.input || '.env');
+  if (await fs.pathExists(primaryPath)) {
+    files.push(primaryPath);
+  }
+
+  // Check for .env.local (Next.js/Vite pattern)
+  const localPath = path.resolve(cwd, '.env.local');
+  if (await fs.pathExists(localPath)) {
+    files.push(localPath);
+  }
+
+  // Check for environment-specific files
+  const envSpecificFiles = [
+    '.env.development',
+    '.env.development.local',
+    '.env.production',
+    '.env.production.local',
+    '.env.test',
+    '.env.test.local',
+  ];
+
+  for (const envFile of envSpecificFiles) {
+    const envFilePath = path.resolve(cwd, envFile);
+    if (await fs.pathExists(envFilePath)) {
+      files.push(envFilePath);
+    }
+  }
+
+  return files;
 };
 
 /**
@@ -60,154 +99,15 @@ const readFileSafe = async (filePath: string): Promise<string> => {
 };
 
 /**
- * Print drift results with hacker aesthetic
- */
-const printDriftResult = (result: DriftResult, config: EnvDriftConfig): void => {
-  console.log();
-
-  if (result.isSynced) {
-    console.log(pc.green('✓ ') + pc.bold(pc.green('SYNCED')) + pc.dim(' - No drift detected'));
-    console.log(pc.dim(`  ${config.input} has ${result.envKeys.length} keys`));
-    console.log(pc.dim(`  ${config.output} has ${result.exampleKeys.length} keys`));
-    return;
-  }
-
-  console.log(pc.red('✗ ') + pc.bold(pc.red('DRIFT DETECTED')));
-  console.log();
-
-  if (result.missingInExample.length > 0) {
-    console.log(
-      pc.yellow('⚠ ') +
-        pc.bold(`Missing in ${config.output} (${result.missingInExample.length}):`)
-    );
-    result.missingInExample.forEach((key) => {
-      console.log(pc.red('  - ') + pc.white(key));
-    });
-    console.log();
-  }
-
-  if (result.missingInLocal.length > 0) {
-    console.log(
-      pc.yellow('⚠ ') +
-        pc.bold(`Missing in ${config.input} (${result.missingInLocal.length}):`)
-    );
-    result.missingInLocal.forEach((key) => {
-      console.log(pc.red('  - ') + pc.white(key));
-    });
-    console.log();
-  }
-
-  console.log(pc.dim('─'.repeat(40)));
-  console.log(pc.dim(`Run ${pc.green('envdrift sync')} to fix drift`));
-  if (!config.strict) {
-    console.log(pc.dim(`    ${pc.cyan('--strict')} to scrub ALL values`));
-  }
-  console.log(pc.dim(`    ${pc.cyan('--dry-run')} to preview changes`));
-};
-
-/**
- * Print dry-run table showing what would be written
- */
-const printDryRunTable = (entries: SyncedEntry[], added: string[], removed: string[]): void => {
-  console.log();
-  console.log(pc.cyan('► ') + pc.bold('DRY RUN - Preview of changes:'));
-  console.log();
-
-  // Table header
-  const keyWidth = Math.max(20, ...entries.map((e) => e.key.length)) + 2;
-  const valueWidth = 35;
-  const reasonWidth = 25;
-
-  console.log(
-    pc.dim('┌' + '─'.repeat(keyWidth) + '┬' + '─'.repeat(valueWidth) + '┬' + '─'.repeat(reasonWidth) + '┐')
-  );
-  console.log(
-    pc.dim('│') +
-      pc.bold(' KEY'.padEnd(keyWidth)) +
-      pc.dim('│') +
-      pc.bold(' SCRUBBED VALUE'.padEnd(valueWidth)) +
-      pc.dim('│') +
-      pc.bold(' REASON'.padEnd(reasonWidth)) +
-      pc.dim('│')
-  );
-  console.log(
-    pc.dim('├' + '─'.repeat(keyWidth) + '┼' + '─'.repeat(valueWidth) + '┼' + '─'.repeat(reasonWidth) + '┤')
-  );
-
-  // Table rows
-  entries.forEach((entry) => {
-    const isNew = added.includes(entry.key);
-    const keyCell = (' ' + (isNew ? '+ ' : '') + entry.key).padEnd(keyWidth);
-    const truncatedValue =
-      entry.scrubbedValue.length > valueWidth - 3
-        ? entry.scrubbedValue.substring(0, valueWidth - 5) + '...'
-        : entry.scrubbedValue;
-    const valueCell = (' ' + truncatedValue).padEnd(valueWidth);
-    const reasonCell = (' ' + entry.reason).padEnd(reasonWidth);
-
-    const keyColor = isNew ? pc.green : entry.wasScrubbed ? pc.yellow : pc.white;
-    const valueColor = entry.wasScrubbed ? pc.red : pc.white;
-    const statusIcon = entry.wasScrubbed ? pc.red('⚠') : pc.green('✓');
-
-    console.log(
-      pc.dim('│') +
-        keyColor(keyCell) +
-        pc.dim('│') +
-        valueColor(valueCell) +
-        pc.dim('│') +
-        statusIcon + reasonCell.substring(1) +
-        pc.dim('│')
-    );
-  });
-
-  console.log(
-    pc.dim('└' + '─'.repeat(keyWidth) + '┴' + '─'.repeat(valueWidth) + '┴' + '─'.repeat(reasonWidth) + '┘')
-  );
-
-  // Summary
-  const scrubbedCount = entries.filter((e) => e.wasScrubbed).length;
-  console.log();
-  
-  if (added.length > 0) {
-    console.log(pc.green(`+ ${added.length} new key(s) would be added`));
-  }
-  if (removed.length > 0) {
-    console.log(pc.red(`- ${removed.length} key(s) would be removed`));
-  }
-  
-  console.log(pc.dim('─'.repeat(40)));
-  console.log(
-    pc.yellow(`⚠ ${scrubbedCount}`) +
-      pc.dim(` value(s) would be scrubbed, `) +
-      pc.green(`${entries.length - scrubbedCount}`) +
-      pc.dim(` kept as-is`)
-  );
-  console.log();
-  console.log(pc.cyan('ℹ ') + pc.dim('Run without --dry-run to apply changes'));
-};
-
-/**
- * Print config info
- */
-const printConfigInfo = (configPath: string | null, config: EnvDriftConfig): void => {
-  if (configPath) {
-    console.log(pc.dim(`📄 Config: ${path.relative(process.cwd(), configPath)}`));
-  }
-  if (config.ignore?.length) {
-    console.log(pc.dim(`🔓 Ignored keys: ${config.ignore.join(', ')}`));
-  }
-  if (config.alwaysScrub?.length) {
-    console.log(pc.dim(`🔒 Always scrub: ${config.alwaysScrub.join(', ')}`));
-  }
-};
-
-/**
  * CHECK command - Detect drift between .env and .env.example
  */
 interface CheckCommandOptions {
   input?: string;
   output?: string;
   ci?: boolean;
+  json?: boolean;
+  quiet?: boolean;
+  all?: boolean;
 }
 
 const checkCommand = async (options: CheckCommandOptions): Promise<void> => {
@@ -218,21 +118,79 @@ const checkCommand = async (options: CheckCommandOptions): Promise<void> => {
     ci: options.ci,
   });
 
-  if (!mergedConfig.ci) {
-    console.log(banner);
-    printConfigInfo(configPath, mergedConfig);
-  }
+  const format: OutputFormat = options.json ? 'json' : 'text';
+  const out = createOutputHandler({
+    format,
+    quiet: options.quiet || false,
+    ci: mergedConfig.ci || false,
+  });
+
+  out.banner();
+  out.printConfigInfo(configPath, mergedConfig);
 
   const { envPath, examplePath } = getFilePaths(mergedConfig);
 
-  // Check if input file exists
-  if (!(await fs.pathExists(envPath))) {
-    if (mergedConfig.ci) {
-      console.error(`Error: No ${mergedConfig.input} file found`);
+  // Check all .env files if --all flag is used
+  if (options.all) {
+    const envFiles = await resolveEnvFiles(mergedConfig);
+    
+    if (envFiles.length === 0) {
+      out.error('No .env files found');
       process.exit(1);
     }
-    console.log(pc.red('✗ ') + pc.bold(`No ${mergedConfig.input} file found`));
-    console.log(pc.dim(`  Expected: ${envPath}`));
+
+    if (format === 'json') {
+      const results: Record<string, ReturnType<typeof detectDrift>> = {};
+      
+      for (const envFile of envFiles) {
+        const envContent = await readFileSafe(envFile);
+        const exampleContent = await readFileSafe(examplePath);
+        const envEntries = parseEnvContent(envContent, false);
+        const exampleEntries = parseEnvContent(exampleContent, false);
+        const envKeys = extractKeys(envEntries);
+        const exampleKeys = extractKeys(exampleEntries);
+        results[normalizePath(path.relative(process.cwd(), envFile))] = detectDrift(envKeys, exampleKeys);
+      }
+      
+      out.json({
+        files: envFiles.map(f => normalizePath(path.relative(process.cwd(), f))),
+        results,
+        synced: Object.values(results).every(r => r.isSynced),
+      });
+      process.exit(Object.values(results).some(r => !r.isSynced) ? 1 : 0);
+    }
+
+    let hasDrift = false;
+    for (const envFile of envFiles) {
+      const relativePath = normalizePath(path.relative(process.cwd(), envFile));
+      out.log(pc.bold(`\nChecking ${relativePath}...`));
+      
+      const envContent = await readFileSafe(envFile);
+      const exampleContent = await readFileSafe(examplePath);
+      const envEntries = parseEnvContent(envContent, false);
+      const exampleEntries = parseEnvContent(exampleContent, false);
+      const envKeys = extractKeys(envEntries);
+      const exampleKeys = extractKeys(exampleEntries);
+      const result = detectDrift(envKeys, exampleKeys);
+      
+      if (!result.isSynced) {
+        hasDrift = true;
+      }
+      
+      out.printDriftResult(result, { ...mergedConfig, input: relativePath });
+    }
+    
+    process.exit(hasDrift ? 1 : 0);
+  }
+
+  // Check if input file exists
+  if (!(await fs.pathExists(envPath))) {
+    if (format === 'json') {
+      out.json({ error: `No ${mergedConfig.input} file found` });
+    } else {
+      out.error(`No ${mergedConfig.input} file found`);
+      out.info(`  Expected: ${envPath}`);
+    }
     process.exit(1);
   }
 
@@ -247,24 +205,7 @@ const checkCommand = async (options: CheckCommandOptions): Promise<void> => {
 
   const result = detectDrift(envKeys, exampleKeys);
 
-  if (mergedConfig.ci) {
-    // CI mode - minimal output, proper exit codes
-    if (result.isSynced) {
-      console.log('✓ No drift detected');
-      process.exit(0);
-    } else {
-      console.log('✗ Drift detected');
-      if (result.missingInExample.length > 0) {
-        console.log(`  Missing in ${mergedConfig.output}: ${result.missingInExample.join(', ')}`);
-      }
-      if (result.missingInLocal.length > 0) {
-        console.log(`  Missing in ${mergedConfig.input}: ${result.missingInLocal.join(', ')}`);
-      }
-      process.exit(1);
-    }
-  }
-
-  printDriftResult(result, mergedConfig);
+  out.printDriftResult(result, mergedConfig);
 
   // Exit with code 1 if drift detected
   if (!result.isSynced) {
@@ -285,6 +226,10 @@ interface SyncCommandOptions {
   sort?: boolean;
   ignore?: string[];
   preserveComments?: boolean;
+  json?: boolean;
+  quiet?: boolean;
+  interactive?: boolean;
+  watch?: boolean;
 }
 
 const syncCommand = async (options: SyncCommandOptions): Promise<void> => {
@@ -300,33 +245,70 @@ const syncCommand = async (options: SyncCommandOptions): Promise<void> => {
     preserveComments: options.preserveComments,
   });
 
+  const format: OutputFormat = options.json ? 'json' : 'text';
+  const out = createOutputHandler({
+    format,
+    quiet: options.quiet || false,
+    ci: mergedConfig.ci || false,
+  });
+
   const syncOptions: SyncOptions = configToSyncOptions(mergedConfig);
 
-  if (!mergedConfig.ci) {
-    console.log(banner);
-    printConfigInfo(configPath, mergedConfig);
+  // Watch mode
+  if (options.watch) {
+    out.banner();
+    out.printConfigInfo(configPath, mergedConfig);
+
+    const { stop } = startWatch({
+      config: mergedConfig,
+      dryRun: options.dryRun,
+      onSync: ({ added, removed, scrubbed }) => {
+        if (!options.quiet) {
+          if (added.length) console.log(pc.green(`  + ${added.length} added`));
+          if (removed.length) console.log(pc.red(`  - ${removed.length} removed`));
+          console.log(pc.dim(`  ${scrubbed} values scrubbed`));
+        }
+      },
+      onError: (error) => {
+        out.error(error.message);
+      },
+    });
+
+    // Handle Ctrl+C
+    process.on('SIGINT', () => {
+      stop();
+      process.exit(0);
+    });
+
+    return; // Keep process running
   }
+
+  out.banner();
+  out.printConfigInfo(configPath, mergedConfig);
 
   const { envPath, examplePath } = getFilePaths(mergedConfig);
 
   // Check if input file exists
   if (!(await fs.pathExists(envPath))) {
-    if (mergedConfig.ci) {
-      console.error(`Error: No ${mergedConfig.input} file found`);
-      process.exit(1);
+    if (format === 'json') {
+      out.json({ error: `No ${mergedConfig.input} file found` });
+    } else {
+      out.error(`No ${mergedConfig.input} file found`);
+      out.info(`  Expected: ${envPath}`);
     }
-    console.log(pc.red('✗ ') + pc.bold(`No ${mergedConfig.input} file found`));
-    console.log(pc.dim(`  Expected: ${envPath}`));
     process.exit(1);
   }
 
   // Show mode indicators
-  if (!mergedConfig.ci) {
+  if (!mergedConfig.ci && format !== 'json' && !options.quiet) {
     if (mergedConfig.strict) {
       console.log(pc.yellow('⚠ ') + pc.bold(pc.yellow('STRICT MODE')) + pc.dim(' - All values will be scrubbed'));
     }
     if (mergedConfig.merge) {
       console.log(pc.blue('🔀 ') + pc.bold(pc.blue('MERGE MODE')) + pc.dim(' - Preserving existing keys'));
+    }
+    if (options.interactive) {
+      console.log(pc.magenta('🎛  ') + pc.bold(pc.magenta('INTERACTIVE MODE')) + pc.dim(' - Approve each change'));
     }
     if (options.dryRun) {
       console.log(pc.cyan('ℹ ') + pc.bold(pc.cyan('DRY RUN')) + pc.dim(' - No files will be modified'));
@@ -343,63 +325,131 @@ const syncCommand = async (options: SyncCommandOptions): Promise<void> => {
   const exampleEntries = parseEnvContent(exampleContent, mergedConfig.preserveComments);
 
   // Generate synced content with smart scrubbing
-  const { content: syncedContent, entries: syncedEntries, added, removed } = generateSyncedExample(
+  let { content: syncedContent, entries: syncedEntries, added, removed } = generateSyncedExample(
     envEntries,
     exampleEntries,
     syncOptions
   );
 
+  // Interactive mode
+  if (options.interactive && !mergedConfig.ci && format !== 'json') {
+    const result = await interactiveSync(syncedEntries);
+    
+    if (result.skipped.length > 0) {
+      // Remove skipped entries
+      syncedEntries = result.entries;
+      
+      // Regenerate content
+      const lines: string[] = [];
+      lines.push(`# This file was synced and scrubbed by EnvDrift`);
+      lines.push(`# https://github.com/sol-21/envdrift`);
+      lines.push('');
+      
+      syncedEntries.forEach(entry => {
+        if (entry.precedingComments?.length) {
+          lines.push(...entry.precedingComments);
+        }
+        let line = `${entry.key}=${entry.scrubbedValue}`;
+        if (entry.comment) {
+          line += ` ${entry.comment}`;
+        }
+        lines.push(line);
+      });
+      
+      syncedContent = lines.join('\n') + '\n';
+      
+      console.log();
+      console.log(pc.dim(`Skipped ${result.skipped.length} key(s): ${result.skipped.join(', ')}`));
+    }
+  }
+
   // Dry run mode - just show what would happen
   if (options.dryRun) {
-    if (mergedConfig.ci) {
-      // CI dry run - simple output
-      const scrubbedCount = syncedEntries.filter((e) => e.wasScrubbed).length;
-      console.log(`Would scrub ${scrubbedCount} value(s)`);
-      if (added.length > 0) console.log(`Would add ${added.length} key(s): ${added.join(', ')}`);
-      if (removed.length > 0) console.log(`Would remove ${removed.length} key(s): ${removed.join(', ')}`);
-      process.exit(0);
-    }
-    printDryRunTable(syncedEntries, added, removed);
+    out.printDryRunTable(syncedEntries, added, removed);
     return;
   }
 
   // Write to output file
   await fs.writeFile(examplePath, syncedContent, 'utf-8');
 
-  // CI mode - minimal output
-  if (mergedConfig.ci) {
-    const scrubbedCount = syncedEntries.filter((e) => e.wasScrubbed).length;
-    console.log(`✓ ${mergedConfig.output} updated (${scrubbedCount} values scrubbed)`);
-    process.exit(0);
+  out.printSyncSuccess(
+    mergedConfig.output || '.env.example',
+    syncedEntries,
+    added,
+    removed,
+    examplePath
+  );
+};
+
+/**
+ * DIFF command - Show diff between .env and .env.example
+ */
+interface DiffCommandOptions {
+  input?: string;
+  output?: string;
+  json?: boolean;
+  quiet?: boolean;
+  changesOnly?: boolean;
+}
+
+const diffCommand = async (options: DiffCommandOptions): Promise<void> => {
+  const { config, configPath } = await loadConfig();
+  const mergedConfig = mergeConfigWithOptions(config, {
+    input: options.input,
+    output: options.output,
+  });
+
+  const format: OutputFormat = options.json ? 'json' : 'text';
+  const out = createOutputHandler({
+    format,
+    quiet: options.quiet || false,
+    ci: false,
+  });
+
+  out.banner();
+  out.printConfigInfo(configPath, mergedConfig);
+
+  const { envPath, examplePath } = getFilePaths(mergedConfig);
+
+  // Check if both files exist
+  if (!(await fs.pathExists(envPath))) {
+    if (format === 'json') {
+      out.json({ error: `No ${mergedConfig.input} file found` });
+    } else {
+      out.error(`No ${mergedConfig.input} file found`);
+    }
+    process.exit(1);
   }
 
-  console.log(pc.green('✓ ') + pc.bold(pc.green(`${mergedConfig.output} updated!`)));
-  console.log();
-
-  if (added.length > 0) {
-    console.log(pc.green(`  Added ${added.length} new key(s):`));
-    added.forEach((key) => {
-      console.log(pc.green('    + ') + pc.white(key));
-    });
+  if (!(await fs.pathExists(examplePath))) {
+    if (format === 'json') {
+      out.json({ error: `No ${mergedConfig.output} file found` });
+    } else {
+      out.error(`No ${mergedConfig.output} file found`);
+    }
+    process.exit(1);
   }
 
-  if (removed.length > 0) {
-    console.log(pc.red(`  Removed ${removed.length} key(s):`));
-    removed.forEach((key) => {
-      console.log(pc.red('    - ') + pc.white(key));
-    });
-  }
+  const envContent = await readFileSafe(envPath);
+  const exampleContent = await readFileSafe(examplePath);
 
-  if (added.length === 0 && removed.length === 0) {
-    console.log(pc.dim('  No keys added or removed'));
-  }
+  const envEntries = parseEnvContent(envContent, false);
+  const exampleEntries = parseEnvContent(exampleContent, false);
 
-  // Show scrubbing stats
-  const scrubbedCount = syncedEntries.filter((e) => e.wasScrubbed).length;
-  console.log();
-  console.log(pc.dim('─'.repeat(40)));
-  console.log(pc.green('✓ ') + pc.dim(`${scrubbedCount} sensitive value(s) scrubbed`));
-  console.log(pc.dim(`  Output: ${examplePath}`));
+  const diffResult = options.changesOnly
+    ? computeChangesOnly(envEntries, exampleEntries)
+    : computeDiff(envEntries, exampleEntries);
+
+  out.printDiff(
+    diffResult.lines,
+    mergedConfig.input || '.env',
+    mergedConfig.output || '.env.example'
+  );
+
+  // Exit with code 1 if there are changes
+  if (diffResult.added > 0 || diffResult.removed > 0 || diffResult.modified > 0) {
+    process.exit(1);
+  }
 };
 
 /**
@@ -489,6 +539,71 @@ echo "✓ No drift detected"
   }
 };
 
+/**
+ * SCAN command - Scan all .env files in project
+ */
+interface ScanCommandOptions {
+  json?: boolean;
+  quiet?: boolean;
+}
+
+const scanCommand = async (options: ScanCommandOptions): Promise<void> => {
+  const { config, configPath } = await loadConfig();
+
+  const format: OutputFormat = options.json ? 'json' : 'text';
+  const out = createOutputHandler({
+    format,
+    quiet: options.quiet || false,
+    ci: false,
+  });
+
+  out.banner();
+  out.printConfigInfo(configPath, config);
+
+  const envFiles = await resolveEnvFiles(config);
+
+  if (format === 'json') {
+    const fileDetails = await Promise.all(
+      envFiles.map(async (filePath) => {
+        const content = await readFileSafe(filePath);
+        const entries = parseEnvContent(content, false);
+        return {
+          path: normalizePath(path.relative(process.cwd(), filePath)),
+          keyCount: entries.length,
+          keys: extractKeys(entries),
+        };
+      })
+    );
+    
+    out.json({
+      files: fileDetails,
+      totalFiles: envFiles.length,
+      totalKeys: fileDetails.reduce((sum, f) => sum + f.keyCount, 0),
+    });
+    return;
+  }
+
+  if (envFiles.length === 0) {
+    out.warn('No .env files found in project');
+    return;
+  }
+
+  console.log(pc.bold(`Found ${envFiles.length} .env file(s):`));
+  console.log();
+
+  for (const filePath of envFiles) {
+    const relativePath = normalizePath(path.relative(process.cwd(), filePath));
+    const content = await readFileSafe(filePath);
+    const entries = parseEnvContent(content, false);
+    
+    console.log(pc.green('  ✓ ') + pc.white(relativePath) + pc.dim(` (${entries.length} keys)`));
+  }
+
+  console.log();
+  console.log(pc.dim('─'.repeat(40)));
+  console.log(pc.dim(`Run ${pc.green('envdrift check --all')} to check all files`));
+};
+
 // Initialize CLI
 const program = new Command();
 
@@ -503,6 +618,9 @@ program
   .option('-i, --input <file>', 'Input .env file (default: .env)')
   .option('-o, --output <file>', 'Output .env.example file (default: .env.example)')
   .option('--ci', 'CI mode - minimal output, proper exit codes')
+  .option('--json', 'Output results as JSON')
+  .option('-q, --quiet', 'Suppress all output except errors')
+  .option('-a, --all', 'Check all .env files (.env, .env.local, .env.development, etc.)')
   .action(checkCommand);
 
 program
@@ -517,7 +635,21 @@ program
   .option('--sort', 'Sort keys alphabetically')
   .option('--ignore <keys...>', 'Keys to ignore (never scrub)')
   .option('--no-preserve-comments', 'Do not preserve comments')
+  .option('--json', 'Output results as JSON')
+  .option('-q, --quiet', 'Suppress all output except errors')
+  .option('-I, --interactive', 'Interactive mode - approve each change')
+  .option('-w, --watch', 'Watch mode - auto-sync on file changes')
   .action(syncCommand);
+
+program
+  .command('diff')
+  .description('Show diff between .env and .env.example')
+  .option('-i, --input <file>', 'Input .env file (default: .env)')
+  .option('-o, --output <file>', 'Output .env.example file (default: .env.example)')
+  .option('--json', 'Output results as JSON')
+  .option('-q, --quiet', 'Suppress all output except errors')
+  .option('-c, --changes-only', 'Only show changes, hide unchanged keys')
+  .action(diffCommand);
 
 program
   .command('init')
@@ -525,6 +657,13 @@ program
   .option('-f, --force', 'Overwrite existing config file')
   .option('--hook', 'Setup git pre-commit hook')
   .action(initCommand);
+
+program
+  .command('scan')
+  .description('Scan project for all .env files')
+  .option('--json', 'Output results as JSON')
+  .option('-q, --quiet', 'Suppress all output except errors')
+  .action(scanCommand);
 
 // Default to help if no command provided
 if (process.argv.length < 3) {

@@ -137,6 +137,48 @@ NODE_ENV=production`,
   "sort": false
 }`,
 
+  diff: `╔═══════════════════════════════════════╗
+║  🛡️  EnvDrift  v1.0.0               ║
+║  Sync .env files without leaking     ║
+║  secrets.                            ║
+╚═══════════════════════════════════════╝
+
+Diff: .env ↔ .env.example
+────────────────────────────────────────────────────────────
+
++ API_KEY=secret123
++ AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+~ DATABASE_URL
+  - YOUR_DATABASE_URL_HERE
+  + postgres://user:password@localhost:5432/mydb
+- OLD_UNUSED_KEY=value
+
+────────────────────────────────────────────────────────────
++ 2 added  - 1 removed  ~ 1 modified`,
+
+  scan: `╔═══════════════════════════════════════╗
+║  🛡️  EnvDrift  v1.0.0               ║
+║  Sync .env files without leaking     ║
+║  secrets.                            ║
+╚═══════════════════════════════════════╝
+
+Found 3 .env file(s):
+
+  ✓ .env (12 keys)
+  ✓ .env.local (5 keys)
+  ✓ .env.development (8 keys)
+
+────────────────────────────────────────
+Run envdrift check --all to check all files`,
+
+  jsonOutput: `{
+  "synced": false,
+  "missingInExample": ["NEW_API_KEY", "STRIPE_SECRET"],
+  "missingInEnv": ["OLD_KEY"],
+  "envKeyCount": 10,
+  "exampleKeyCount": 9
+}`,
+
   githubAction: `name: Check Env Drift
 
 on: [push, pull_request]
@@ -549,7 +591,7 @@ const Index = () => {
             <p className="text-muted-foreground text-lg">Built for security-conscious developers</p>
           </motion.div>
 
-          <div className="grid md:grid-cols-2 gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             <FeatureCard
               icon={<Shield className="w-6 h-6" />}
               title="Smart Scrubbing"
@@ -572,13 +614,28 @@ const Index = () => {
             />
             <FeatureCard
               icon={<GitBranch className="w-6 h-6" />}
-              title="Merge Mode"
-              description="Use --merge to add new keys without overwriting existing entries. Perfect for team workflows."
+              title="Diff & Watch Mode"
+              description="Visual diff between files with envdrift diff. Auto-sync on changes with envdrift sync --watch."
             />
             <FeatureCard
               icon={<Workflow className="w-6 h-6" />}
               title="CI/CD Ready"
-              description="Use --ci for minimal output and proper exit codes. Includes GitHub Actions workflow and pre-commit hooks."
+              description="Use --json for machine-readable output, --ci for minimal mode, --quiet to suppress output. Proper exit codes."
+            />
+            <FeatureCard
+              icon={<Package className="w-6 h-6" />}
+              title="Multi-file Support"
+              description="Scan .env, .env.local, .env.development, etc. with envdrift scan. Check all files at once with --all."
+            />
+            <FeatureCard
+              icon={<BookOpen className="w-6 h-6" />}
+              title="Interactive Mode"
+              description="Approve each change individually with envdrift sync --interactive. Perfect for reviewing sensitive updates."
+            />
+            <FeatureCard
+              icon={<CheckCircle2 className="w-6 h-6" />}
+              title="Merge Mode"
+              description="Use --merge to add new keys without removing existing entries. Perfect for team workflows."
             />
           </div>
         </div>
@@ -831,15 +888,20 @@ const Index = () => {
               <tbody>
                 <CLIRow command="envdrift check" description="Detect drift between .env and .env.example" />
                 <CLIRow command="envdrift check --ci" description="CI mode with minimal output and exit codes" />
+                <CLIRow command="envdrift check --json" description="Output results as JSON for tooling" />
+                <CLIRow command="envdrift check --all" description="Check all .env files (.env, .env.local, etc.)" />
                 <CLIRow command="envdrift sync" description="Sync and scrub .env.example with smart detection" />
                 <CLIRow command="envdrift sync --dry-run" description="Preview changes without modifying files" />
                 <CLIRow command="envdrift sync --strict" description="Scrub ALL values (paranoid mode)" />
+                <CLIRow command="envdrift sync --interactive" description="Approve each change individually" />
+                <CLIRow command="envdrift sync --watch" description="Auto-sync on file changes" />
                 <CLIRow command="envdrift sync --merge" description="Add new keys without removing existing" />
-                <CLIRow command="envdrift sync --ignore KEY1 KEY2" description="Skip specific keys from scrubbing" />
-                <CLIRow command="envdrift sync -i .env.local -o .env.local.example" description="Custom input/output files" />
+                <CLIRow command="envdrift sync --json" description="Output results as JSON" />
+                <CLIRow command="envdrift diff" description="Show visual diff between .env and .env.example" />
+                <CLIRow command="envdrift diff --changes-only" description="Only show differences, hide unchanged" />
+                <CLIRow command="envdrift scan" description="Scan project for all .env files" />
                 <CLIRow command="envdrift init" description="Create .envdriftrc.json config file" />
-                <CLIRow command="envdrift init --hook" description="Setup git pre-commit hook" />
-                <CLIRow command="envdrift --help" description="Show help information" isLast />
+                <CLIRow command="envdrift init --hook" description="Setup git pre-commit hook" isLast />
               </tbody>
             </table>
           </motion.div>

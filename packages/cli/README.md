@@ -4,20 +4,28 @@
 
 [![npm version](https://img.shields.io/npm/v/envdrift.svg)](https://www.npmjs.com/package/envdrift)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Tests](https://img.shields.io/badge/tests-96%20passed-brightgreen.svg)](https://github.com/sol-21/envdrift)
 
 EnvDrift is a CLI tool that automatically syncs your `.env` file to `.env.example` while intelligently scrubbing sensitive values. It detects secrets from 30+ providers including AWS, Stripe, GitHub, OpenAI, and database connection strings.
 
 ## ✨ Features
 
-- **🔍 Smart Detection** - Automatically identifies sensitive values by key name AND value patterns
+- **🔍 Smart Detection** - Identifies sensitive values by key name AND value patterns
 - **🏢 Provider Detection** - Recognizes secrets from AWS, Stripe, GitHub, PostgreSQL, MongoDB, OpenAI, and 30+ more
-- **🎯 Strict Mode** - Scrub ALL values when you want maximum security
-- **👀 Dry Run** - Preview exactly what will change before modifying files
+- **📊 JSON Output** - Machine-readable output for CI/CD tooling
+- **🔇 Quiet Mode** - Suppress all output except errors
+- **📁 Multi-file Support** - Scan `.env`, `.env.local`, `.env.development`, etc.
+- **🔄 Diff Command** - Visual comparison between files
+- **👁️ Watch Mode** - Auto-sync on file changes
+- **🎛️ Interactive Mode** - Approve each change individually
+- **🎯 Strict Mode** - Scrub ALL values for maximum security
+- **👀 Dry Run** - Preview changes before modifying files
 - **⚙️ Config File** - Project-level `.envdriftrc.json` for team consistency
 - **🔒 Ignore List** - Keep certain keys unmodified
 - **🔀 Merge Mode** - Add new keys without overwriting existing entries
 - **💬 Comment Preservation** - Keeps your documentation intact
 - **🚀 CI/CD Ready** - Proper exit codes and minimal output mode
+- **🪝 Git Hooks** - Pre-commit hook to prevent drift
 
 ## 📦 Installation
 
@@ -46,6 +54,12 @@ npx envdrift sync --dry-run
 
 # Scrub ALL values (paranoid mode)
 npx envdrift sync --strict
+
+# Interactive sync - approve each change
+npx envdrift sync --interactive
+
+# Watch for changes and auto-sync
+npx envdrift sync --watch
 ```
 
 ## 📖 Commands
@@ -57,7 +71,10 @@ Detect drift between your `.env` and `.env.example` files.
 ```bash
 envdrift check
 envdrift check --input .env.local --output .env.local.example
-envdrift check --ci  # CI mode with proper exit codes
+envdrift check --ci        # CI mode with proper exit codes
+envdrift check --json      # JSON output for tooling
+envdrift check --quiet     # Minimal output
+envdrift check --all       # Check all .env files
 ```
 
 **Options:**
@@ -66,6 +83,9 @@ envdrift check --ci  # CI mode with proper exit codes
 | `-i, --input <file>` | Input file (default: `.env`) |
 | `-o, --output <file>` | Output file (default: `.env.example`) |
 | `--ci` | CI mode - minimal output, exit code 1 on drift |
+| `--json` | Output results as JSON |
+| `-q, --quiet` | Suppress all output except errors |
+| `-a, --all` | Check all .env files (.env, .env.local, etc.) |
 
 ### `envdrift sync`
 
@@ -73,11 +93,13 @@ Sync and scrub your `.env.example` file.
 
 ```bash
 envdrift sync
-envdrift sync --dry-run
-envdrift sync --strict
-envdrift sync --input .env.local --output .env.local.example
+envdrift sync --dry-run           # Preview changes
+envdrift sync --strict            # Scrub all values
+envdrift sync --interactive       # Approve each change
+envdrift sync --watch             # Auto-sync on changes
+envdrift sync --json              # JSON output
+envdrift sync --merge --sort      # Merge and sort keys
 envdrift sync --ignore NODE_ENV DEBUG
-envdrift sync --merge --sort
 ```
 
 **Options:**
@@ -92,20 +114,64 @@ envdrift sync --merge --sort
 | `--sort` | Sort keys alphabetically |
 | `--ignore <keys...>` | Keys to never scrub |
 | `--no-preserve-comments` | Don't preserve comments |
+| `--json` | Output results as JSON |
+| `-q, --quiet` | Suppress all output except errors |
+| `-I, --interactive` | Interactive mode - approve each change |
+| `-w, --watch` | Watch mode - auto-sync on file changes |
+
+### `envdrift diff`
+
+Show visual diff between `.env` and `.env.example`.
+
+```bash
+envdrift diff
+envdrift diff --changes-only    # Only show differences
+envdrift diff --json            # JSON output
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-i, --input <file>` | Input file (default: `.env`) |
+| `-o, --output <file>` | Output file (default: `.env.example`) |
+| `--json` | Output results as JSON |
+| `-q, --quiet` | Suppress all output except errors |
+| `-c, --changes-only` | Only show changes, hide unchanged keys |
+
+### `envdrift scan`
+
+Scan project for all `.env` files.
+
+```bash
+envdrift scan
+envdrift scan --json
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--json` | Output results as JSON |
+| `-q, --quiet` | Suppress all output except errors |
 
 ### `envdrift init`
 
 Initialize EnvDrift in your project.
 
 ```bash
-envdrift init           # Create .envdriftrc.json
-envdrift init --hook    # Also setup git pre-commit hook
+envdrift init
+envdrift init --hook    # Also setup pre-commit hook
 envdrift init --force   # Overwrite existing config
 ```
 
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-f, --force` | Overwrite existing config file |
+| `--hook` | Setup git pre-commit hook |
+
 ## ⚙️ Configuration
 
-Create a `.envdriftrc.json` in your project root:
+Create `.envdriftrc.json` in your project root:
 
 ```json
 {
@@ -113,19 +179,21 @@ Create a `.envdriftrc.json` in your project root:
   "output": ".env.example",
   "strict": false,
   "ignore": ["NODE_ENV", "DEBUG", "LOG_LEVEL"],
-  "alwaysScrub": ["INTERNAL_SECRET"],
-  "sensitiveKeywords": ["custom", "mycompany"],
+  "alwaysScrub": ["INTERNAL_API_KEY"],
+  "sensitiveKeywords": ["custom_secret"],
   "preserveComments": true,
   "merge": false,
-  "sort": false
+  "sort": false,
+  "placeholderFormat": "YOUR_{KEY}_HERE"
 }
 ```
 
-**Config Options:**
+### Configuration Options
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `input` | string | `.env` | Source file path |
-| `output` | string | `.env.example` | Destination file path |
+| `input` | string | `.env` | Input file path |
+| `output` | string | `.env.example` | Output file path |
 | `strict` | boolean | `false` | Scrub all values |
 | `ignore` | string[] | `[]` | Keys to never scrub |
 | `alwaysScrub` | string[] | `[]` | Keys to always scrub |
@@ -133,156 +201,147 @@ Create a `.envdriftrc.json` in your project root:
 | `preserveComments` | boolean | `true` | Preserve comments |
 | `merge` | boolean | `false` | Merge mode |
 | `sort` | boolean | `false` | Sort keys alphabetically |
-| `placeholderFormat` | string | `YOUR_{KEY}_HERE` | Custom placeholder |
+| `groupByPrefix` | boolean | `false` | Group keys by prefix |
+| `placeholderFormat` | string | `YOUR_{KEY}_HERE` | Placeholder template |
 
 ## 🔐 Provider Detection
 
-EnvDrift automatically detects and scrubs secrets from these providers by analyzing the **value pattern**, even if the key name doesn't indicate sensitivity:
+EnvDrift automatically detects and scrubs secrets from these providers:
 
-| Provider | Pattern Examples |
-|----------|------------------|
-| **AWS** | `AKIA...`, 40-char secret keys |
-| **Stripe** | `sk_live_...`, `pk_test_...`, `whsec_...` |
-| **GitHub** | `ghp_...`, `github_pat_...`, `gho_...` |
-| **GitLab** | `glpat-...`, `glptt-...` |
+| Provider | Pattern |
+|----------|---------|
+| **AWS** | Access Key ID (`AKIA...`), Secret Access Key |
+| **Stripe** | `sk_live_*`, `sk_test_*`, `pk_*`, `rk_*`, `whsec_*` |
+| **GitHub** | `ghp_*`, `gho_*`, `ghu_*`, `ghs_*`, `ghr_*`, `github_pat_*` |
+| **GitLab** | `glpat-*`, `glptt-*` |
 | **OpenAI** | `sk-...` (48 chars) |
-| **Anthropic** | `sk-ant-...` |
-| **Database URLs** | `postgres://`, `mongodb://`, `redis://` |
-| **JWT** | `eyJ...` (3 parts) |
-| **Slack** | `xoxb-...`, `xoxa-...` |
-| **SendGrid** | `SG....` |
-| **Twilio** | `AC...` (32 chars) |
-| **Google** | `AIza...` |
-| **NPM** | `npm_...` |
-| **Vercel/Netlify** | Various patterns |
-| **PEM Keys** | `-----BEGIN PRIVATE KEY-----` |
+| **Anthropic** | `sk-ant-*` |
+| **Clerk** | `sk_live_*`, `sk_test_*`, `pk_live_*`, `pk_test_*` |
+| **Supabase** | JWT tokens starting with `eyJ...` |
+| **Twilio** | Account SID (`AC...`), Auth Token |
+| **SendGrid** | `SG.*.*` |
+| **Mailgun** | `key-*` |
+| **Mailchimp** | `*-us*` API keys |
+| **Slack** | `xox[baprs]-*`, webhook URLs |
+| **Discord** | Webhook URLs |
+| **Google** | API Keys (`AIza*`), OAuth Client IDs |
+| **NPM** | `npm_*` tokens |
+| **Heroku** | UUID-format API keys |
+| **Databases** | PostgreSQL, MySQL, MongoDB, Redis, SQLite connection strings |
+| **JWT** | `eyJ*.*.*` tokens |
+| **Private Keys** | PEM format (`-----BEGIN PRIVATE KEY-----`) |
 
-## 🤖 CI/CD Integration
+## 🚀 CI/CD Integration
 
 ### GitHub Actions
 
 ```yaml
-name: Check Env Drift
+name: EnvDrift Check
 
 on: [push, pull_request]
 
 jobs:
-  check-env:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      
-      - name: Check for env drift
-        run: npx envdrift check --ci
+      - run: npx envdrift check --ci
 ```
 
-### Pre-commit Hook
+### JSON Output for Tooling
+
+```bash
+# Get drift status as JSON
+npx envdrift check --json
+
+# Get sync preview as JSON
+npx envdrift sync --dry-run --json
+
+# Get diff as JSON
+npx envdrift diff --json
+```
+
+Example JSON output:
+
+```json
+{
+  "synced": false,
+  "missingInExample": ["NEW_API_KEY"],
+  "missingInEnv": ["OLD_KEY"],
+  "envKeyCount": 10,
+  "exampleKeyCount": 9
+}
+```
+
+### Git Pre-commit Hook
 
 ```bash
 # Setup automatically
-envdrift init --hook
+npx envdrift init --hook
 
-# Or manually add to .git/hooks/pre-commit:
-#!/bin/sh
-npx envdrift check --ci || exit 1
+# Or add manually to .git/hooks/pre-commit
+npx envdrift check --ci
 ```
 
-### GitLab CI
+## 🎯 Example Workflows
 
-```yaml
-check-env:
-  script:
-    - npx envdrift check --ci
-  rules:
-    - changes:
-        - .env
-        - .env.example
+### Daily Development
+
+```bash
+# Watch for changes and auto-sync
+npx envdrift sync --watch
 ```
 
-## 📝 Example Output
+### Before Committing
 
-**Input (`.env`):**
-```env
-# Database
-DATABASE_URL=postgres://user:secretpass@db.example.com:5432/myapp
+```bash
+# Check for drift
+npx envdrift check
 
-# API Keys
-STRIPE_KEY=sk_live_51HG2abcdefghij1234567890
-GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# If drift detected, sync
+npx envdrift sync
 
-# App Config
-NODE_ENV=production
-DEBUG=false
+# Or preview first
+npx envdrift sync --dry-run
 ```
 
-**Output (`.env.example`):**
-```env
-# This file was synced and scrubbed by EnvDrift
-# https://github.com/sol-21/envdrift
+### Team Onboarding
 
-# Database
-DATABASE_URL=YOUR_DATABASE_URL_HERE
-
-# API Keys
-STRIPE_KEY=YOUR_STRIPE_KEY_HERE
-GITHUB_TOKEN=YOUR_GITHUB_TOKEN_HERE
-
-# App Config
-NODE_ENV=production
-DEBUG=false
+```bash
+# Initialize project with config + pre-commit hook
+npx envdrift init --hook
 ```
 
-## 🧪 Programmatic Usage
+### Maximum Security
 
-```typescript
-import {
-  parseEnvContent,
-  detectDrift,
-  generateSyncedExample,
-  detectProviderSecret,
-} from 'envdrift';
-
-// Parse env content
-const entries = parseEnvContent(envFileContent);
-
-// Check for drift
-const drift = detectDrift(envKeys, exampleKeys);
-if (!drift.isSynced) {
-  console.log('Missing keys:', drift.missingInExample);
-}
-
-// Generate synced content
-const { content, entries } = generateSyncedExample(envEntries, exampleEntries, {
-  strictMode: false,
-  ignore: ['NODE_ENV'],
-});
-
-// Detect provider secrets
-const provider = detectProviderSecret('sk_live_xxx');
-// Returns: "Stripe Secret Key"
+```bash
+# Scrub ALL values, no exceptions
+npx envdrift sync --strict
 ```
 
-## 🛡️ Security
+### Interactive Review
 
-EnvDrift is designed with security as the top priority:
+```bash
+# Approve each change individually
+npx envdrift sync --interactive
+```
 
-1. **Never exposes real values** - All sensitive values are replaced with placeholders
-2. **Pattern matching** - Detects secrets even when key names are misleading
-3. **Strict mode** - Option to scrub everything when in doubt
-4. **Dry run** - Always preview before making changes
-5. **No network calls** - Everything runs locally, your secrets never leave your machine
+### Multi-file Projects (Next.js, Vite)
 
-## 📄 License
+```bash
+# Scan all .env files
+npx envdrift scan
+
+# Check all .env files at once
+npx envdrift check --all
+
+# Sync specific file
+npx envdrift sync -i .env.local -o .env.local.example
+```
+
+## 📝 License
 
 MIT © [sol-21](https://github.com/sol-21)
-
----
-
-<p align="center">
-  Built with 🛡️ for developers who care about security
-</p>
