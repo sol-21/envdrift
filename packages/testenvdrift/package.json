@@ -1,0 +1,28 @@
+{
+  "name": "testenvdrift",
+  "version": "1.0.0",
+  "description": "Sample Express.js project to test envdrift package",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "envdrift:check": "envdrift check",
+    "envdrift:sync": "envdrift sync",
+    "envdrift:diff": "envdrift diff",
+    "envdrift:scan": "envdrift scan"
+  },
+  "keywords": [
+    "express",
+    "envdrift",
+    "test"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "envdrift": "^1.0.0"
+  }
+}
