@@ -19,7 +19,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sol-21/envdrift.git"
+    "url": "git+https://github.com/sol-21/envdrift.git"
   },
   "homepage": "https://github.com/sol-21/envdrift#readme",
   "bugs": {
@@ -27,7 +27,7 @@
   },
   "type": "module",
   "bin": {
-    "envdrift": "./dist/index.js"
+    "envdrift": "dist/index.js"
   },
   "main": "./dist/engine.js",
   "types": "./dist/engine.d.ts",
