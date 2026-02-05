@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, feat/cli-package]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -23,15 +23,12 @@ jobs:
           node-version: ${{ matrix.node-version }}
 
       - name: Install dependencies
-        working-directory: packages/cli
         run: npm ci
 
       - name: Build
-        working-directory: packages/cli
         run: npm run build
 
       - name: Run tests
-        working-directory: packages/cli
         run: npm test
 
   lint:
@@ -46,38 +43,7 @@ jobs:
           node-version: 20.x
 
       - name: Install dependencies
-        working-directory: packages/cli
         run: npm ci
 
       - name: Type check
-        working-directory: packages/cli
         run: npm run build
-
-  publish:
-    needs: [test, lint]
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Use Node.js 20.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Install dependencies
-        working-directory: packages/cli
-        run: npm ci
-
-      - name: Build
-        working-directory: packages/cli
-        run: npm run build
-
-      - name: Publish to npm
-        working-directory: packages/cli
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        continue-on-error: true  # Don't fail if version already exists
