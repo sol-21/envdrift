@@ -5,6 +5,9 @@
 
 import type { EnvDriftConfig } from './config.js';
 
+// Re-export config utilities for extension use
+export { loadConfig, type EnvDriftConfig } from './config.js';
+
 export interface EnvEntry {
   key: string;
   value: string;

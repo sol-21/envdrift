@@ -34,11 +34,18 @@
   "exports": {
     ".": {
       "types": "./dist/engine.d.ts",
-      "import": "./dist/engine.js"
+      "import": "./dist/engine.js",
+      "default": "./dist/engine.js"
     },
     "./cli": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js",
+      "default": "./dist/config.js"
     }
   },
   "files": [

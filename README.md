@@ -3,10 +3,29 @@
 > Sync `.env` files without leaking secrets.
 
 [![npm version](https://img.shields.io/npm/v/envdrift.svg)](https://www.npmjs.com/package/envdrift)
+[![VS Code](https://img.shields.io/visual-studio-marketplace/v/sol-21.envdrift-vscode.svg?label=VS%20Code)](https://marketplace.visualstudio.com/items?itemName=sol-21.envdrift-vscode)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://img.shields.io/badge/tests-96%20passed-brightgreen.svg)](https://github.com/sol-21/envdrift)
 
 EnvDrift is a CLI tool that automatically syncs your `.env` file to `.env.example` while intelligently scrubbing sensitive values. It detects secrets from 30+ providers including AWS, Stripe, GitHub, OpenAI, and database connection strings.
+
+## 🆚 VS Code Extension
+
+EnvDrift also has a VS Code extension for real-time drift detection!
+
+[![Install VS Code Extension](https://img.shields.io/badge/Install-VS%20Code%20Extension-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=sol-21.envdrift-vscode)
+
+**Features:**
+- 📊 **Status Bar** - See drift status at a glance
+- ⚡ **Auto-Check** - Automatically detects drift when files change
+- 🔄 **One-Click Sync** - Sync directly from VS Code
+- 📋 **Diff View** - Side-by-side comparison
+- ⚠️ **Problems Panel** - Integrates with VS Code diagnostics
+
+**Install:** Search "EnvDrift" in VS Code Extensions or run:
+```bash
+code --install-extension sol-21.envdrift-vscode
+```
 
 ## ✨ Features
 
