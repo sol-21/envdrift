@@ -1,6 +1,6 @@
 {
   "name": "envdrift",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Sync .env files without leaking secrets. Detect drift and smart-scrub sensitive values.",
   "keywords": [
     "env",
