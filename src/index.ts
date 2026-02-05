@@ -28,7 +28,7 @@ import { computeDiff, computeChangesOnly } from './diff.js';
 import { startWatch } from './watch.js';
 import { interactiveSync } from './interactive.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 /**
  * Normalize path for cross-platform compatibility
