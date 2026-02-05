@@ -155,10 +155,11 @@ envdrift scan --json
 
 ### `envdrift init`
 
-Initialize EnvDrift in your project.
+Initialize EnvDrift in your project with an interactive wizard.
 
 ```bash
-envdrift init
+envdrift init           # Interactive wizard
+envdrift init --yes     # Skip wizard, use defaults
 envdrift init --hook    # Also setup pre-commit hook
 envdrift init --force   # Overwrite existing config
 ```
@@ -168,10 +169,11 @@ envdrift init --force   # Overwrite existing config
 |--------|-------------|
 | `-f, --force` | Overwrite existing config file |
 | `--hook` | Setup git pre-commit hook |
+| `-y, --yes` | Skip wizard, use default config |
 
 ## ⚙️ Configuration
 
-Create `.envdriftrc.json` in your project root:
+Create `.envdriftrc.json` in your project root (or use `envdrift init` wizard):
 
 ```json
 {
@@ -181,6 +183,9 @@ Create `.envdriftrc.json` in your project root:
   "ignore": ["NODE_ENV", "DEBUG", "LOG_LEVEL"],
   "alwaysScrub": ["INTERNAL_API_KEY"],
   "sensitiveKeywords": ["custom_secret"],
+  "customPatterns": [
+    { "name": "MyService", "pattern": "^myservice_[a-z0-9]{32}$" }
+  ],
   "preserveComments": true,
   "merge": false,
   "sort": false,
@@ -198,6 +203,7 @@ Create `.envdriftrc.json` in your project root:
 | `ignore` | string[] | `[]` | Keys to never scrub |
 | `alwaysScrub` | string[] | `[]` | Keys to always scrub |
 | `sensitiveKeywords` | string[] | `[]` | Custom sensitive keywords |
+| `customPatterns` | array | `[]` | Custom regex patterns for secret detection |
 | `preserveComments` | boolean | `true` | Preserve comments |
 | `merge` | boolean | `false` | Merge mode |
 | `sort` | boolean | `false` | Sort keys alphabetically |
@@ -340,6 +346,189 @@ npx envdrift check --all
 
 # Sync specific file
 npx envdrift sync -i .env.local -o .env.local.example
+```
+
+## 📚 Programmatic API
+
+EnvDrift can be used as a library in your Node.js projects:
+
+### Installation
+
+```bash
+npm install envdrift
+```
+
+### Basic Usage
+
+```typescript
+import {
+  parseEnvContent,
+  detectDrift,
+  generateSyncedExample,
+  detectProviderSecret,
+  isSensitiveKey,
+} from 'envdrift';
+
+// Parse .env file content
+const envContent = `
+API_KEY=sk_live_abc123
+DATABASE_URL=postgres://user:pass@localhost/db
+NODE_ENV=development
+`;
+
+const entries = parseEnvContent(envContent);
+console.log(entries);
+// [
+//   { key: 'API_KEY', value: 'sk_live_abc123', line: 2 },
+//   { key: 'DATABASE_URL', value: 'postgres://user:pass@localhost/db', line: 3 },
+//   { key: 'NODE_ENV', value: 'development', line: 4 }
+// ]
+```
+
+### Drift Detection
+
+```typescript
+import { parseEnvContent, extractKeys, detectDrift } from 'envdrift';
+import fs from 'fs';
+
+const envContent = fs.readFileSync('.env', 'utf-8');
+const exampleContent = fs.readFileSync('.env.example', 'utf-8');
+
+const envKeys = extractKeys(parseEnvContent(envContent));
+const exampleKeys = extractKeys(parseEnvContent(exampleContent));
+
+const drift = detectDrift(envKeys, exampleKeys);
+
+console.log(drift);
+// {
+//   isSynced: false,
+//   missingInExample: ['NEW_KEY'],
+//   missingInLocal: ['REMOVED_KEY'],
+//   envKeys: [...],
+//   exampleKeys: [...]
+// }
+```
+
+### Generate Synced Example
+
+```typescript
+import { parseEnvContent, generateSyncedExample } from 'envdrift';
+import fs from 'fs';
+
+const envContent = fs.readFileSync('.env', 'utf-8');
+const envEntries = parseEnvContent(envContent);
+
+const exampleContent = fs.readFileSync('.env.example', 'utf-8');
+const exampleEntries = parseEnvContent(exampleContent);
+
+const result = generateSyncedExample(envEntries, exampleEntries, {
+  strictMode: false,
+  ignore: ['NODE_ENV', 'DEBUG'],
+  preserveComments: true,
+});
+
+console.log(result.content);  // Scrubbed .env.example content
+console.log(result.added);    // Keys added
+console.log(result.removed);  // Keys removed
+console.log(result.entries);  // Detailed entry info with scrub reasons
+
+// Write to file
+fs.writeFileSync('.env.example', result.content);
+```
+
+### Secret Detection
+
+```typescript
+import { detectProviderSecret, isSensitiveKey } from 'envdrift';
+
+// Detect secrets by value pattern
+detectProviderSecret('sk_live_abc123xyz');
+// Returns: 'Stripe Secret Key'
+
+detectProviderSecret('ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
+// Returns: 'GitHub Personal Access Token (Classic)'
+
+detectProviderSecret('postgres://user:pass@localhost/db');
+// Returns: 'PostgreSQL Connection String'
+
+detectProviderSecret('hello-world');
+// Returns: null (not a known secret pattern)
+
+// Check if key name is sensitive
+isSensitiveKey('DATABASE_PASSWORD');  // true
+isSensitiveKey('API_KEY');            // true
+isSensitiveKey('APP_NAME');           // false
+isSensitiveKey('MY_CUSTOM_SECRET', ['custom_secret']);  // true (with custom keywords)
+```
+
+### Custom Patterns
+
+```typescript
+import { detectProviderSecret } from 'envdrift';
+
+// Use custom patterns
+const customPatterns = [
+  { name: 'MyService', pattern: '^myservice_[a-z0-9]{32}$' },
+  { name: 'InternalToken', pattern: '^internal_token_[A-Z0-9]+$' },
+];
+
+detectProviderSecret('myservice_abc123def456ghi789jkl012mno345', customPatterns);
+// Returns: 'Custom: MyService'
+```
+
+### API Reference
+
+#### `parseEnvContent(content: string, preserveComments?: boolean): EnvEntry[]`
+Parse .env file content into structured entries.
+
+#### `extractKeys(entries: EnvEntry[]): string[]`
+Extract just the key names from parsed entries.
+
+#### `detectDrift(envKeys: string[], exampleKeys: string[]): DriftResult`
+Compare two sets of keys and return drift information.
+
+#### `generateSyncedExample(envEntries, exampleEntries, options?): SyncResult`
+Generate scrubbed .env.example content.
+
+#### `detectProviderSecret(value: string, customPatterns?): string | null`
+Check if a value matches known secret patterns.
+
+#### `isSensitiveKey(key: string, customKeywords?): boolean`
+Check if a key name indicates sensitive data.
+
+#### `configToSyncOptions(config: EnvDriftConfig): SyncOptions`
+Convert config file format to sync options.
+
+### Types
+
+```typescript
+interface EnvEntry {
+  key: string;
+  value: string;
+  line: number;
+  comment?: string;
+  precedingComments?: string[];
+}
+
+interface DriftResult {
+  isSynced: boolean;
+  missingInExample: string[];
+  missingInLocal: string[];
+  envKeys: string[];
+  exampleKeys: string[];
+}
+
+interface SyncOptions {
+  strictMode?: boolean;
+  ignore?: string[];
+  alwaysScrub?: string[];
+  customSensitiveKeywords?: string[];
+  customPatterns?: { name: string; pattern: string }[];
+  preserveComments?: boolean;
+  merge?: boolean;
+  sort?: boolean;
+  placeholderFormat?: string;
+}
 ```
 
 ## 📝 License

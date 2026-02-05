@@ -1,11 +1,12 @@
 /**
  * EnvDrift Interactive Module
- * Interactive prompts for sync command
+ * Interactive prompts for sync command and init wizard
  */
 
 import readline from 'readline';
 import pc from 'picocolors';
 import type { SyncedEntry } from './engine.js';
+import type { EnvDriftConfig } from './config.js';
 
 export interface InteractiveResult {
   entries: SyncedEntry[];
@@ -130,6 +131,189 @@ export const confirmAction = async (message: string): Promise<boolean> => {
   const rl = createReadline();
   try {
     return await askYesNo(rl, pc.yellow('? ') + message + ' [Y/n]: ');
+  } finally {
+    rl.close();
+  }
+};
+
+/**
+ * Ask for a string input with optional default
+ */
+const askString = async (
+  rl: readline.Interface,
+  question: string,
+  defaultValue?: string
+): Promise<string> => {
+  return new Promise((resolve) => {
+    const prompt = defaultValue
+      ? `${question} ${pc.dim(`(${defaultValue})`)}: `
+      : `${question}: `;
+    rl.question(prompt, (answer) => {
+      resolve(answer.trim() || defaultValue || '');
+    });
+  });
+};
+
+/**
+ * Ask for a comma-separated list
+ */
+const askList = async (
+  rl: readline.Interface,
+  question: string,
+  defaultValue: string[] = []
+): Promise<string[]> => {
+  return new Promise((resolve) => {
+    const defaultStr = defaultValue.length > 0 ? defaultValue.join(', ') : 'none';
+    const prompt = `${question} ${pc.dim(`(${defaultStr})`)}: `;
+    rl.question(prompt, (answer) => {
+      if (!answer.trim()) {
+        resolve(defaultValue);
+        return;
+      }
+      const items = answer
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      resolve(items);
+    });
+  });
+};
+
+/**
+ * Ask for a choice from options
+ */
+const askChoice = async (
+  rl: readline.Interface,
+  question: string,
+  options: { value: string; label: string }[],
+  defaultIndex: number = 0
+): Promise<string> => {
+  console.log(pc.cyan('? ') + question);
+  options.forEach((opt, i) => {
+    const marker = i === defaultIndex ? pc.green('❯') : ' ';
+    console.log(`  ${marker} ${pc.bold(opt.value)} - ${pc.dim(opt.label)}`);
+  });
+  
+  return new Promise((resolve) => {
+    rl.question(pc.dim(`Enter choice (${options.map(o => o.value).join('/')}): `), (answer) => {
+      const normalized = answer.trim().toLowerCase();
+      const match = options.find(o => o.value.toLowerCase() === normalized);
+      resolve(match ? match.value : options[defaultIndex].value);
+    });
+  });
+};
+
+export interface InitWizardResult {
+  config: EnvDriftConfig;
+  setupHook: boolean;
+}
+
+/**
+ * Interactive init wizard
+ */
+export const initWizard = async (): Promise<InitWizardResult> => {
+  const rl = createReadline();
+  
+  console.log();
+  console.log(pc.bold(pc.cyan('🛡️  EnvDrift Setup Wizard')));
+  console.log(pc.dim('Answer a few questions to configure EnvDrift for your project.'));
+  console.log(pc.dim('Press Enter to accept defaults.'));
+  console.log();
+
+  try {
+    // Input file
+    const input = await askString(rl, pc.cyan('? ') + 'Input .env file', '.env');
+    
+    // Output file
+    const output = await askString(rl, pc.cyan('? ') + 'Output example file', '.env.example');
+    
+    // Strict mode
+    console.log();
+    console.log(pc.cyan('? ') + 'Scrubbing mode:');
+    console.log(`  ${pc.green('❯')} ${pc.bold('smart')} - ${pc.dim('Scrub only detected secrets (recommended)')}`);
+    console.log(`    ${pc.bold('strict')} - ${pc.dim('Scrub ALL values (paranoid mode)')}`);
+    const modeAnswer = await askString(rl, pc.dim('  Enter choice (smart/strict)'), 'smart');
+    const strict = modeAnswer.toLowerCase() === 'strict';
+    
+    // Keys to ignore
+    console.log();
+    const ignore = await askList(
+      rl,
+      pc.cyan('? ') + 'Keys to never scrub (comma-separated)',
+      ['NODE_ENV', 'DEBUG']
+    );
+    
+    // Always scrub keys
+    const alwaysScrub = await askList(
+      rl,
+      pc.cyan('? ') + 'Keys to always scrub (comma-separated)',
+      []
+    );
+    
+    // Custom sensitive keywords
+    console.log();
+    const sensitiveKeywords = await askList(
+      rl,
+      pc.cyan('? ') + 'Additional sensitive keywords (comma-separated)',
+      []
+    );
+    
+    // Custom provider patterns
+    console.log();
+    console.log(pc.cyan('? ') + 'Custom secret patterns (regex):');
+    console.log(pc.dim('  Add patterns to detect custom secrets. Format: name:regex'));
+    console.log(pc.dim('  Example: MyService:^myservice_[a-z0-9]{32}$'));
+    const customPatternsInput = await askString(rl, pc.dim('  Enter patterns (comma-separated, or skip)'), '');
+    
+    const customPatterns: { name: string; pattern: string }[] = [];
+    if (customPatternsInput) {
+      const parts = customPatternsInput.split(',').map(s => s.trim());
+      for (const part of parts) {
+        const colonIndex = part.indexOf(':');
+        if (colonIndex > 0) {
+          customPatterns.push({
+            name: part.substring(0, colonIndex).trim(),
+            pattern: part.substring(colonIndex + 1).trim(),
+          });
+        }
+      }
+    }
+    
+    // Preserve comments
+    console.log();
+    const preserveComments = await askYesNo(
+      rl,
+      pc.cyan('? ') + 'Preserve comments from .env? [Y/n]: '
+    );
+    
+    // Sort keys
+    const sort = await askYesNo(
+      rl,
+      pc.cyan('? ') + 'Sort keys alphabetically? [y/N]: '
+    );
+    
+    // Git hook
+    console.log();
+    const setupHook = await askYesNo(
+      rl,
+      pc.cyan('? ') + 'Setup git pre-commit hook? [Y/n]: '
+    );
+
+    const config: EnvDriftConfig = {
+      input,
+      output,
+      strict,
+      ignore,
+      alwaysScrub,
+      sensitiveKeywords,
+      customPatterns: customPatterns.length > 0 ? customPatterns : undefined,
+      preserveComments,
+      merge: false,
+      sort,
+      groupByPrefix: false,
+    };
+
+    return { config, setupHook };
   } finally {
     rl.close();
   }

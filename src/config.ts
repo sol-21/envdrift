@@ -24,6 +24,9 @@ export interface EnvDriftConfig {
   // Custom sensitive keywords to add
   sensitiveKeywords?: string[];
 
+  // Custom secret patterns (regex-based)
+  customPatterns?: { name: string; pattern: string }[];
+
   // Preserve comments from source file
   preserveComments?: boolean;
 

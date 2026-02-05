@@ -26,9 +26,8 @@ import {
 import { createOutputHandler, banner, type OutputFormat } from './output.js';
 import { computeDiff, computeChangesOnly } from './diff.js';
 import { startWatch } from './watch.js';
-import { interactiveSync } from './interactive.js';
-
-const VERSION = '1.1.0';
+import { interactiveSync, initWizard } from './interactive.js';
+import { VERSION } from './version.js';
 
 /**
  * Normalize path for cross-platform compatibility
@@ -458,37 +457,20 @@ const diffCommand = async (options: DiffCommandOptions): Promise<void> => {
 interface InitCommandOptions {
   force?: boolean;
   hook?: boolean;
+  yes?: boolean; // Skip wizard, use defaults
 }
 
-const initCommand = async (options: InitCommandOptions): Promise<void> => {
-  console.log(banner);
-  
-  const cwd = process.cwd();
-  const configPath = path.join(cwd, '.envdriftrc.json');
-
-  // Check if config already exists
-  if (await fs.pathExists(configPath)) {
-    if (!options.force) {
-      console.log(pc.yellow('⚠ ') + pc.bold('.envdriftrc.json already exists'));
-      console.log(pc.dim('  Use --force to overwrite'));
-      return;
-    }
-  }
-
-  // Create config file
-  const configContent = generateDefaultConfig();
-  await fs.writeFile(configPath, configContent, 'utf-8');
-  console.log(pc.green('✓ ') + pc.bold('Created .envdriftrc.json'));
-
-  // Setup git pre-commit hook if requested
-  if (options.hook) {
-    const gitDir = path.join(cwd, '.git');
-    if (await fs.pathExists(gitDir)) {
-      const hooksDir = path.join(gitDir, 'hooks');
-      await fs.ensureDir(hooksDir);
-      
-      const preCommitPath = path.join(hooksDir, 'pre-commit');
-      const hookContent = `#!/bin/sh
+/**
+ * Setup git pre-commit hook
+ */
+const setupGitHook = async (cwd: string): Promise<void> => {
+  const gitDir = path.join(cwd, '.git');
+  if (await fs.pathExists(gitDir)) {
+    const hooksDir = path.join(gitDir, 'hooks');
+    await fs.ensureDir(hooksDir);
+    
+    const preCommitPath = path.join(hooksDir, 'pre-commit');
+    const hookContent = `#!/bin/sh
 # EnvDrift pre-commit hook
 # Checks for env drift before allowing commit
 
@@ -505,35 +487,79 @@ fi
 
 echo "✓ No drift detected"
 `;
-      
-      // Check if pre-commit hook already exists
-      if (await fs.pathExists(preCommitPath)) {
-        const existingHook = await fs.readFile(preCommitPath, 'utf-8');
-        if (!existingHook.includes('envdrift')) {
-          // Append to existing hook
-          await fs.appendFile(preCommitPath, '\n' + hookContent);
-          console.log(pc.green('✓ ') + pc.bold('Added EnvDrift to existing pre-commit hook'));
-        } else {
-          console.log(pc.dim('  Pre-commit hook already includes EnvDrift'));
-        }
+    
+    // Check if pre-commit hook already exists
+    if (await fs.pathExists(preCommitPath)) {
+      const existingHook = await fs.readFile(preCommitPath, 'utf-8');
+      if (!existingHook.includes('envdrift')) {
+        // Append to existing hook
+        await fs.appendFile(preCommitPath, '\n' + hookContent);
+        console.log(pc.green('✓ ') + pc.bold('Added EnvDrift to existing pre-commit hook'));
       } else {
-        await fs.writeFile(preCommitPath, hookContent);
-        await fs.chmod(preCommitPath, '755');
-        console.log(pc.green('✓ ') + pc.bold('Created pre-commit hook'));
+        console.log(pc.dim('  Pre-commit hook already includes EnvDrift'));
       }
     } else {
-      console.log(pc.yellow('⚠ ') + pc.dim('No .git directory found, skipping hook setup'));
+      await fs.writeFile(preCommitPath, hookContent);
+      await fs.chmod(preCommitPath, '755');
+      console.log(pc.green('✓ ') + pc.bold('Created pre-commit hook'));
     }
+  } else {
+    console.log(pc.yellow('⚠ ') + pc.dim('No .git directory found, skipping hook setup'));
+  }
+};
+
+const initCommand = async (options: InitCommandOptions): Promise<void> => {
+  console.log(banner);
+  
+  const cwd = process.cwd();
+  const configPath = path.join(cwd, '.envdriftrc.json');
+
+  // Check if config already exists
+  if (await fs.pathExists(configPath)) {
+    if (!options.force) {
+      console.log(pc.yellow('⚠ ') + pc.bold('.envdriftrc.json already exists'));
+      console.log(pc.dim('  Use --force to overwrite'));
+      return;
+    }
+  }
+
+  let configContent: string;
+  let setupHook = options.hook || false;
+
+  // Use wizard unless --yes flag is passed
+  if (!options.yes) {
+    try {
+      const wizardResult = await initWizard();
+      configContent = JSON.stringify(wizardResult.config, null, 2);
+      setupHook = wizardResult.setupHook;
+    } catch (error) {
+      // User cancelled or error occurred, fall back to defaults
+      console.log();
+      console.log(pc.yellow('Setup cancelled, using defaults...'));
+      configContent = generateDefaultConfig();
+    }
+  } else {
+    configContent = generateDefaultConfig();
+  }
+
+  // Create config file
+  await fs.writeFile(configPath, configContent, 'utf-8');
+  console.log();
+  console.log(pc.green('✓ ') + pc.bold('Created .envdriftrc.json'));
+
+  // Setup git pre-commit hook if requested
+  if (setupHook) {
+    await setupGitHook(cwd);
   }
 
   console.log();
   console.log(pc.dim('─'.repeat(40)));
   console.log(pc.bold('Next steps:'));
-  console.log(pc.dim('  1. Edit .envdriftrc.json to customize'));
+  console.log(pc.dim('  1. Review .envdriftrc.json'));
   console.log(pc.dim('  2. Run ') + pc.green('envdrift check') + pc.dim(' to check for drift'));
   console.log(pc.dim('  3. Run ') + pc.green('envdrift sync') + pc.dim(' to sync files'));
   
-  if (!options.hook) {
+  if (!setupHook) {
     console.log();
     console.log(pc.dim('💡 Tip: Run ') + pc.cyan('envdrift init --hook') + pc.dim(' to add a pre-commit hook'));
   }
@@ -656,6 +682,7 @@ program
   .description('Initialize EnvDrift in current project')
   .option('-f, --force', 'Overwrite existing config file')
   .option('--hook', 'Setup git pre-commit hook')
+  .option('-y, --yes', 'Skip wizard, use default config')
   .action(initCommand);
 
 program

@@ -22,7 +22,7 @@ export interface DiffLine {
   exampleValue?: string;
 }
 
-const VERSION = '1.1.0';
+import { VERSION } from './version.js';
 
 // ASCII art banner
 export const banner = `

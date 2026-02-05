@@ -26,6 +26,7 @@ export interface ScrubOptions {
   ignore?: string[];
   alwaysScrub?: string[];
   customSensitiveKeywords?: string[];
+  customPatterns?: { name: string; pattern: string }[];
   placeholderFormat?: string;
 }
 
@@ -296,12 +297,31 @@ export const isSensitiveKey = (key: string, customKeywords: string[] = []): bool
  * Check if a value matches known provider secret patterns
  * Returns the provider name if matched, null otherwise
  */
-export const detectProviderSecret = (value: string): string | null => {
+export const detectProviderSecret = (
+  value: string,
+  customPatterns?: { name: string; pattern: string }[]
+): string | null => {
+  // Check built-in patterns first
   for (const { name, pattern } of PROVIDER_PATTERNS) {
     if (pattern.test(value)) {
       return name;
     }
   }
+  
+  // Check custom patterns
+  if (customPatterns) {
+    for (const { name, pattern } of customPatterns) {
+      try {
+        const regex = new RegExp(pattern);
+        if (regex.test(value)) {
+          return `Custom: ${name}`;
+        }
+      } catch {
+        // Invalid regex, skip
+      }
+    }
+  }
+  
   return null;
 };
 
@@ -357,7 +377,7 @@ export const scrubValueDetailed = (
   }
 
   // Check if value matches provider patterns (catches misleading key names)
-  const providerMatch = detectProviderSecret(value);
+  const providerMatch = detectProviderSecret(value, options.customPatterns);
   if (providerMatch) {
     return {
       key,
@@ -547,6 +567,7 @@ export const configToSyncOptions = (config: EnvDriftConfig): SyncOptions => {
     ignore: config.ignore,
     alwaysScrub: config.alwaysScrub,
     customSensitiveKeywords: config.sensitiveKeywords,
+    customPatterns: config.customPatterns,
     preserveComments: config.preserveComments,
     merge: config.merge,
     placeholderFormat: config.placeholderFormat,
